@@ -39,17 +39,6 @@ contract MinerETHTest is Test {
     MinerETHFactory public immutable factory = new MinerETHFactory();
     MinerETH public immutable miner;
 
-    event Deposit(
-        address indexed msgSender,
-        bytes32 indexed memo,
-        uint256 amount
-    );
-    event Withdraw(address indexed msgSender, uint256 amount);
-    event Mine(address indexed msgSender, uint256 interest, uint256 rewards);
-    event ClaimRewards(address indexed msgSender, uint256 rewards);
-
-    error InsufficientSharesMinted();
-
     receive() external payable {}
 
     constructor() {
@@ -69,7 +58,7 @@ contract MinerETHTest is Test {
 
         vm.prank(address(0xbeef));
 
-        miner.deposit{value: 1e18}("");
+        miner.deposit{value: 1e18}("test");
 
         skip(1 days);
     }
@@ -248,7 +237,7 @@ contract MinerETHTest is Test {
 
         vm.expectEmit(true, true, true, true, address(miner));
 
-        emit Deposit(address(this), memo.packOne(), amount);
+        emit MinerETH.Deposit(address(this), memo.packOne(), amount);
 
         miner.deposit{value: amount}(memo);
 
@@ -273,7 +262,7 @@ contract MinerETHTest is Test {
 
         vm.expectEmit(true, true, true, true, address(miner));
 
-        emit Deposit(address(this), memo.packOne(), amount);
+        emit MinerETH.Deposit(address(this), memo.packOne(), amount);
 
         miner.deposit{value: amount}(memo);
 
@@ -314,7 +303,7 @@ contract MinerETHTest is Test {
 
         vm.expectEmit(true, true, true, true, address(miner));
 
-        emit Withdraw(address(this), amount);
+        emit MinerETH.Withdraw(address(this), amount);
 
         miner.withdraw(amount);
 
@@ -343,7 +332,7 @@ contract MinerETHTest is Test {
 
         vm.expectEmit(true, true, true, true, address(miner));
 
-        emit Withdraw(address(this), amount);
+        emit MinerETH.Withdraw(address(this), amount);
 
         miner.withdraw(amount);
 
@@ -377,7 +366,7 @@ contract MinerETHTest is Test {
 
         vm.expectEmit(true, true, true, true, address(miner));
 
-        emit Withdraw(address(this), withdrawalAmount);
+        emit MinerETH.Withdraw(address(this), withdrawalAmount);
 
         miner.withdraw(withdrawalAmount);
 
@@ -419,7 +408,7 @@ contract MinerETHTest is Test {
 
         vm.expectEmit(true, true, true, false, address(miner));
 
-        emit ClaimRewards(address(this), rewardsAccrued);
+        emit MinerETH.ClaimRewards(address(this), rewardsAccrued);
 
         uint256 rewards = miner.claimRewards();
         uint256 rewardsAccruedAfter = rewardsDistributor.rewardsAccrued(
@@ -452,7 +441,7 @@ contract MinerETHTest is Test {
 
         vm.expectEmit(true, true, true, false, address(miner));
 
-        emit ClaimRewards(address(this), rewardsAccrued);
+        emit MinerETH.ClaimRewards(address(this), rewardsAccrued);
 
         uint256 rewards = miner.claimRewards();
         uint256 rewardsAccruedAfter = rewardsDistributor.rewardsAccrued(

@@ -18,7 +18,7 @@ contract MinerETHFactory {
     /// @notice Deployed minimal proxies for each reward token.
     mapping(address rewardToken => address clone) public deployments;
 
-    event Deploy(address indexed rewardToken, address indexed clone);
+    event Deploy(address rewardToken);
 
     error InvalidRewardToken();
 
@@ -55,6 +55,6 @@ contract MinerETHFactory {
         flywheel.addStrategyForRewards(ERC20(address(miner)));
         flywheel.transferOwnership(address(0));
 
-        emit Deploy(rewardToken, clone);
+        emit Deploy(rewardToken);
     }
 }
