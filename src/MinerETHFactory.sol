@@ -13,29 +13,28 @@ import {MinerETH} from "src/MinerETH.sol";
 contract MinerETHFactory {
     using LibClone for address;
 
-    struct Deployment {
-        address miner;
-        address flywheel;
-        address dynamicRewards;
-        address rewardsStore;
-    }
+    address private immutable _implementation = address(new MinerETH());
 
-    address private immutable implementation = address(new MinerETH());
+    /// @notice Deployed minimal proxies for each reward token.
+    mapping(address rewardToken => address clone) public deployments;
 
-    mapping(address rewardToken => Deployment) public deployments;
-
-    event Deploy(address rewardToken);
+    event Deploy(address indexed rewardToken, address indexed clone);
 
     error InvalidRewardToken();
 
-    function deploy(address rewardToken) external returns (Deployment memory) {
+    /**
+     * @notice Deploys a new MinerETH instance for the specified reward token.
+     * @param  rewardToken  address  Reward token.
+     * @return clone        address  MinerETH minimal proxy contract.
+     */
+    function deploy(address rewardToken) external returns (address clone) {
         if (rewardToken == address(0)) revert InvalidRewardToken();
 
-        Deployment storage deployment = deployments[rewardToken];
+        // If an ETH mining vault exists for the reward token, return the existing deployment address.
+        if (deployments[rewardToken] != address(0))
+            return deployments[rewardToken];
 
-        if (deployment.miner != address(0)) return deployment;
-
-        MinerETH miner = MinerETH(payable(implementation.clone()));
+        MinerETH miner = MinerETH(payable(clone = _implementation.clone()));
         FlywheelCore flywheel = new FlywheelCore(
             ERC20(rewardToken),
             IFlywheelRewards(address(0)),
@@ -46,19 +45,16 @@ contract MinerETHFactory {
         DynamicRewards dynamicRewards = new DynamicRewards(flywheel);
         address rewardsStore = address(dynamicRewards.rewardsStore());
 
-        // Store the deployment to enable ease of retrieval and preventing redundant deployments.
-        deployment.miner = address(miner);
-        deployment.flywheel = address(flywheel);
-        deployment.dynamicRewards = address(dynamicRewards);
-        deployment.rewardsStore = rewardsStore;
+        // Store the deployment to enable ease of retrieval and prevent redundant deployments.
+        deployments[rewardToken] = clone;
 
+        // Configure flywheel to handle reward accounting and distribution for the mining vault.
+        // Transfers flywheel ownership to the zero address to prevent further changes.
         flywheel.setFlywheelRewards(dynamicRewards);
         miner.initialize(rewardToken, address(flywheel), rewardsStore);
         flywheel.addStrategyForRewards(ERC20(address(miner)));
         flywheel.transferOwnership(address(0));
 
-        emit Deploy(rewardToken);
-
-        return deployment;
+        emit Deploy(rewardToken, clone);
     }
 }

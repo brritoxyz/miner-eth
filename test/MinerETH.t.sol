@@ -14,26 +14,9 @@ import {IWETH} from "src/interfaces/IWETH.sol";
 import {IRewardsDistributor} from "test/interfaces/IRewardsDistributor.sol";
 import {IBrrETH} from "test/interfaces/IBrrETH.sol";
 import {MinerETH} from "src/MinerETH.sol";
+import {MinerETHFactory} from "src/MinerETHFactory.sol";
 
-contract MinerETHFactory {
-    address public immutable implementation = address(new MinerETH());
-
-    function deploy(
-        address rewardToken,
-        address rewardsDistributor,
-        address rewardsStore
-    ) external returns (address clone) {
-        clone = LibClone.clone(implementation);
-
-        MinerETH(payable(clone)).initialize(
-            rewardToken,
-            rewardsDistributor,
-            rewardsStore
-        );
-    }
-}
-
-contract MinerETH_ElonRWATest is Test {
+contract MinerETHTest is Test {
     using LibString for string;
     using SafeTransferLib for address;
 
@@ -50,12 +33,9 @@ contract MinerETH_ElonRWATest is Test {
     string public constant TOKEN_NAME = "Brrito Miner-ETH/ElonRWA";
     string public constant TOKEN_SYMBOL = "brrMINER-ETH/ElonRWA";
     uint256 public constant TOKEN_DECIMALS = 18;
-    IRewardsDistributor public immutable REWARDS_DISTRIBUTOR =
-        IRewardsDistributor(0x29E6fCeEd934E97D3C5dE1F75dAb604C29cE055e);
-    address public constant DYNAMIC_REWARDS =
-        0x0cD65d30679931BEd0CfdA9C8bb4B43BE2e0ebd9;
-    address public constant REWARDS_STORE =
-        0xAc136DD22c5A2ea317AB69979e8363AdD51D6a51;
+    IRewardsDistributor public immutable rewardsDistributor;
+    address public immutable dynamicRewards;
+    address public immutable rewardsStore;
     MinerETHFactory public immutable factory = new MinerETHFactory();
     MinerETH public immutable miner;
 
@@ -73,19 +53,12 @@ contract MinerETH_ElonRWATest is Test {
     receive() external payable {}
 
     constructor() {
-        miner = MinerETH(
-            payable(
-                factory.deploy(
-                    ELON,
-                    address(REWARDS_DISTRIBUTOR),
-                    REWARDS_STORE
-                )
-            )
+        miner = MinerETH(payable(factory.deploy(ELON)));
+        rewardsDistributor = IRewardsDistributor(
+            address(miner.rewardsDistributor())
         );
-
-        vm.prank(REWARDS_DISTRIBUTOR.owner());
-
-        REWARDS_DISTRIBUTOR.addStrategyForRewards(SolmateERC20(address(miner)));
+        dynamicRewards = address(rewardsDistributor.flywheelRewards());
+        rewardsStore = miner.rewardsStore();
 
         assertEq(TOKEN_NAME, miner.name());
         assertEq(TOKEN_SYMBOL, miner.symbol());
@@ -115,7 +88,7 @@ contract MinerETH_ElonRWATest is Test {
         uint256 minerTotalSupply = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
         uint256 redeposit = minerTotalSupply + COMET_SLIPPAGE;
-        (uint256 strategyIndex, ) = REWARDS_DISTRIBUTOR.strategyState(
+        (uint256 strategyIndex, ) = rewardsDistributor.strategyState(
             SolmateERC20(address(miner))
         );
         uint256 redeemedAssets = BRR_ETH.convertToAssets(minerSharesBalance) -
@@ -131,7 +104,7 @@ contract MinerETH_ElonRWATest is Test {
         estimatedStrategyIndex =
             ((estimatedRewards * 1e18) / minerTotalSupply) +
             strategyIndex;
-        uint256 userIndex = REWARDS_DISTRIBUTOR.userIndex(
+        uint256 userIndex = rewardsDistributor.userIndex(
             SolmateERC20(address(miner)),
             address(this)
         );
@@ -139,7 +112,7 @@ contract MinerETH_ElonRWATest is Test {
         uint256 userTokens = miner.balanceOf(address(this));
         uint256 userDelta = (userTokens * deltaIndex) / 1e18;
         estimatedRewardsAccrued =
-            REWARDS_DISTRIBUTOR.rewardsAccrued(address(this)) +
+            rewardsDistributor.rewardsAccrued(address(this)) +
             userDelta;
     }
 
@@ -168,81 +141,6 @@ contract MinerETH_ElonRWATest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            initialize
-    //////////////////////////////////////////////////////////////*/
-
-    function testCannotInitializeRewardTokenInvalidAddress() external {
-        address rewardToken = address(0);
-        address rewardsDistributor = address(REWARDS_DISTRIBUTOR);
-        address rewardsStore = REWARDS_STORE;
-
-        vm.expectRevert(MinerETH.InvalidAddress.selector);
-
-        factory.deploy(rewardToken, rewardsDistributor, rewardsStore);
-    }
-
-    function testCannotInitializeRewardsDistributorInvalidAddress() external {
-        address rewardToken = ELON;
-        address rewardsDistributor = address(0);
-        address rewardsStore = REWARDS_STORE;
-
-        vm.expectRevert(MinerETH.InvalidAddress.selector);
-
-        factory.deploy(rewardToken, rewardsDistributor, rewardsStore);
-    }
-
-    function testCannotInitializeRewardsStoreInvalidAddress() external {
-        address rewardToken = ELON;
-        address rewardsDistributor = address(REWARDS_DISTRIBUTOR);
-        address rewardsStore = address(0);
-
-        vm.expectRevert(MinerETH.InvalidAddress.selector);
-
-        factory.deploy(rewardToken, rewardsDistributor, rewardsStore);
-    }
-
-    function testCannotInitializeInvalidInitialization() external {
-        address rewardToken = ELON;
-        address rewardsDistributor = address(REWARDS_DISTRIBUTOR);
-        address rewardsStore = REWARDS_STORE;
-        MinerETH testMiner = MinerETH(
-            payable(
-                factory.deploy(rewardToken, rewardsDistributor, rewardsStore)
-            )
-        );
-
-        vm.expectRevert(Initializable.InvalidInitialization.selector);
-
-        testMiner.initialize(rewardToken, rewardsDistributor, rewardsStore);
-    }
-
-    function testInitialize() external {
-        address rewardToken = ELON;
-        address rewardsDistributor = address(REWARDS_DISTRIBUTOR);
-        address rewardsStore = REWARDS_STORE;
-        MinerETH testMiner = MinerETH(
-            payable(
-                factory.deploy(rewardToken, rewardsDistributor, rewardsStore)
-            )
-        );
-
-        assertEq(rewardToken, testMiner.rewardToken());
-        assertEq(rewardsDistributor, address(testMiner.rewardsDistributor()));
-        assertEq(rewardsStore, testMiner.rewardsStore());
-        assertEq(
-            type(uint256).max,
-            ERC20(address(WETH)).allowance(address(testMiner), address(ROUTER))
-        );
-        assertEq(
-            type(uint256).max,
-            ERC20(address(BRR_ETH)).allowance(
-                address(testMiner),
-                address(BRR_ETH_HELPER)
-            )
-        );
-    }
-
-    /*//////////////////////////////////////////////////////////////
                             mine
     //////////////////////////////////////////////////////////////*/
 
@@ -254,7 +152,7 @@ contract MinerETH_ElonRWATest is Test {
         BRR_ETH.harvest();
 
         uint256 minerTotalSupply = miner.totalSupply();
-        uint256 dynamicRewardsElonBalance = ELON.balanceOf(DYNAMIC_REWARDS);
+        uint256 dynamicRewardsElonBalance = ELON.balanceOf(dynamicRewards);
         (
             uint256 estimatedRedepositShares,
             uint256 estimatedInterest,
@@ -266,8 +164,8 @@ contract MinerETH_ElonRWATest is Test {
         (
             uint256 strategyIndex,
             uint256 lastUpdatedTimestamp
-        ) = REWARDS_DISTRIBUTOR.strategyState(SolmateERC20(address(miner)));
-        uint256 rewardsAccrued = REWARDS_DISTRIBUTOR.rewardsAccrued(
+        ) = rewardsDistributor.strategyState(SolmateERC20(address(miner)));
+        uint256 rewardsAccrued = rewardsDistributor.rewardsAccrued(
             address(this)
         );
 
@@ -275,7 +173,7 @@ contract MinerETH_ElonRWATest is Test {
         assertEq(minerTotalSupply, miner.totalSupply());
         assertEq(
             dynamicRewardsElonBalance + rewards,
-            ELON.balanceOf(DYNAMIC_REWARDS)
+            ELON.balanceOf(dynamicRewards)
         );
         assertEq(lastUpdatedTimestamp, block.timestamp);
         assertEq(0, address(WETH).balanceOf(address(miner)));
@@ -297,7 +195,7 @@ contract MinerETH_ElonRWATest is Test {
         BRR_ETH.harvest();
 
         uint256 minerTotalSupply = miner.totalSupply();
-        uint256 dynamicRewardsElonBalance = ELON.balanceOf(DYNAMIC_REWARDS);
+        uint256 dynamicRewardsElonBalance = ELON.balanceOf(dynamicRewards);
         (
             uint256 estimatedRedepositShares,
             uint256 estimatedInterest,
@@ -309,15 +207,15 @@ contract MinerETH_ElonRWATest is Test {
         (
             uint256 strategyIndex,
             uint256 lastUpdatedTimestamp
-        ) = REWARDS_DISTRIBUTOR.strategyState(SolmateERC20(address(miner)));
-        uint256 rewardsAccrued = REWARDS_DISTRIBUTOR.rewardsAccrued(
+        ) = rewardsDistributor.strategyState(SolmateERC20(address(miner)));
+        uint256 rewardsAccrued = rewardsDistributor.rewardsAccrued(
             address(this)
         );
 
         assertEq(minerTotalSupply, miner.totalSupply());
         assertEq(
             dynamicRewardsElonBalance + rewards,
-            ELON.balanceOf(DYNAMIC_REWARDS)
+            ELON.balanceOf(dynamicRewards)
         );
         assertEq(lastUpdatedTimestamp, block.timestamp);
         assertEq(0, address(WETH).balanceOf(address(miner)));
@@ -511,12 +409,12 @@ contract MinerETH_ElonRWATest is Test {
 
         skip(5);
 
-        uint256 rewardsAccrued = REWARDS_DISTRIBUTOR.rewardsAccrued(
+        uint256 rewardsAccrued = rewardsDistributor.rewardsAccrued(
             address(this)
         );
         uint256 elonBalanceBefore = ELON.balanceOf(address(this));
         uint256 dynamicRewardsElonBalanceBefore = ELON.balanceOf(
-            DYNAMIC_REWARDS
+            dynamicRewards
         );
 
         vm.expectEmit(true, true, true, false, address(miner));
@@ -524,7 +422,7 @@ contract MinerETH_ElonRWATest is Test {
         emit ClaimRewards(address(this), rewardsAccrued);
 
         uint256 rewards = miner.claimRewards();
-        uint256 rewardsAccruedAfter = REWARDS_DISTRIBUTOR.rewardsAccrued(
+        uint256 rewardsAccruedAfter = rewardsDistributor.rewardsAccrued(
             address(this)
         );
 
@@ -532,7 +430,7 @@ contract MinerETH_ElonRWATest is Test {
         assertEq(elonBalanceBefore + rewards, ELON.balanceOf(address(this)));
         assertLe(
             dynamicRewardsElonBalanceBefore - rewards,
-            ELON.balanceOf(DYNAMIC_REWARDS)
+            ELON.balanceOf(dynamicRewards)
         );
         assertLe(rewardsAccrued, rewards);
     }
@@ -544,12 +442,12 @@ contract MinerETH_ElonRWATest is Test {
 
         skip(5);
 
-        uint256 rewardsAccrued = REWARDS_DISTRIBUTOR.rewardsAccrued(
+        uint256 rewardsAccrued = rewardsDistributor.rewardsAccrued(
             address(this)
         );
         uint256 elonBalanceBefore = ELON.balanceOf(address(this));
         uint256 dynamicRewardsElonBalanceBefore = ELON.balanceOf(
-            DYNAMIC_REWARDS
+            dynamicRewards
         );
 
         vm.expectEmit(true, true, true, false, address(miner));
@@ -557,7 +455,7 @@ contract MinerETH_ElonRWATest is Test {
         emit ClaimRewards(address(this), rewardsAccrued);
 
         uint256 rewards = miner.claimRewards();
-        uint256 rewardsAccruedAfter = REWARDS_DISTRIBUTOR.rewardsAccrued(
+        uint256 rewardsAccruedAfter = rewardsDistributor.rewardsAccrued(
             address(this)
         );
 
@@ -565,7 +463,7 @@ contract MinerETH_ElonRWATest is Test {
         assertEq(elonBalanceBefore + rewards, ELON.balanceOf(address(this)));
         assertLe(
             dynamicRewardsElonBalanceBefore - rewards,
-            ELON.balanceOf(DYNAMIC_REWARDS)
+            ELON.balanceOf(dynamicRewards)
         );
         assertLe(rewardsAccrued, rewards);
     }

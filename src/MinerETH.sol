@@ -13,6 +13,10 @@ import {IRewardsDistributor} from "src/interfaces/IRewardsDistributor.sol";
 import {IRouter} from "src/interfaces/IRouter.sol";
 import {IWETH} from "src/interfaces/IWETH.sol";
 
+/**
+ * @title Deposit ETH and earn token rewards. Withdraw 100% of your principal at any time.
+ * @author Brrito.xyz (kp | kphed.eth)
+ */
 contract MinerETH is ERC20, Initializable, ReentrancyGuard {
     using LibString for string;
     using SafeTransferLib for address;
@@ -32,8 +36,14 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
     string private _name;
     string private _symbol;
     bytes32 private _pair;
+
+    /// @notice Reward token.
     address public rewardToken;
+
+    /// @notice Reward distributor contract.
     IRewardsDistributor public rewardsDistributor;
+
+    /// @notice Reward storage contract.
     address public rewardsStore;
 
     event Deposit(

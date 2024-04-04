@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {IFlywheelRewards} from "flywheel-v2/interfaces/IFlywheelRewards.sol";
 import {ERC20} from "solmate/tokens/ERC20.sol";
 
 interface IRewardsDistributor {
@@ -23,4 +24,6 @@ interface IRewardsDistributor {
     function owner() external view returns (address);
 
     function addStrategyForRewards(ERC20) external;
+
+    function flywheelRewards() external view returns (IFlywheelRewards);
 }
