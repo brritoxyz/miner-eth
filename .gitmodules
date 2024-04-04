@@ -4,3 +4,6 @@
 [submodule "lib/solady"]
 	path = lib/solady
 	url = https://github.com/Vectorized/solady
+[submodule "lib/flywheel-v2"]
+	path = lib/flywheel-v2
+	url = https://github.com/fei-protocol/flywheel-v2
