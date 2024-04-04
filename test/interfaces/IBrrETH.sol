@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-interface IBrrUSD {
-    function deposit(
-        uint256 amount,
-        address to,
-        uint256 minShares
-    ) external returns (uint256 shares);
+interface IBrrETH {
+    function deposit(address to) external payable returns (uint256 shares);
 
     function convertToShares(
         uint256 assets,

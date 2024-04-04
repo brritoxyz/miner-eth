@@ -8,7 +8,7 @@ import {LibClone} from "solady/utils/LibClone.sol";
 import {Authority} from "solmate/auth/Auth.sol";
 import {ERC20} from "solmate/tokens/ERC20.sol";
 import {DynamicRewards} from "src/DynamicRewards.sol";
-import {InitializableMinerETH} from "src/InitializableMinerETH.sol";
+import {MinerETH} from "src/MinerETH.sol";
 
 contract MinerETHFactory {
     using LibClone for address;
@@ -20,8 +20,7 @@ contract MinerETHFactory {
         address rewardsStore;
     }
 
-    address private immutable implementation =
-        address(new InitializableMinerETH());
+    address private immutable implementation = address(new MinerETH());
 
     mapping(address rewardToken => Deployment) public deployments;
 
@@ -36,9 +35,7 @@ contract MinerETHFactory {
 
         if (deployment.miner != address(0)) return deployment;
 
-        InitializableMinerETH miner = InitializableMinerETH(
-            payable(implementation.clone())
-        );
+        MinerETH miner = MinerETH(payable(implementation.clone()));
         FlywheelCore flywheel = new FlywheelCore(
             ERC20(rewardToken),
             IFlywheelRewards(address(0)),
@@ -48,7 +45,6 @@ contract MinerETHFactory {
         );
         DynamicRewards dynamicRewards = new DynamicRewards(flywheel);
         address rewardsStore = address(dynamicRewards.rewardsStore());
-        string memory rewardTokenName = ERC20(rewardToken).name();
 
         // Store the deployment to enable ease of retrieval and preventing redundant deployments.
         deployment.miner = address(miner);
@@ -57,14 +53,9 @@ contract MinerETHFactory {
         deployment.rewardsStore = rewardsStore;
 
         flywheel.setFlywheelRewards(dynamicRewards);
-        miner.initialize(
-            string.concat("Brrito Miner-ETH/", rewardTokenName),
-            string.concat("brrMINER-ETH/", rewardTokenName),
-            rewardToken,
-            address(flywheel),
-            rewardsStore
-        );
+        miner.initialize(rewardToken, address(flywheel), rewardsStore);
         flywheel.addStrategyForRewards(ERC20(address(miner)));
+        flywheel.transferOwnership(address(0));
 
         emit Deploy(rewardToken);
 

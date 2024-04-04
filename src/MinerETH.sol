@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {Initializable} from "solady/utils/Initializable.sol";
+import {LibString} from "solady/utils/LibString.sol";
 import {ReentrancyGuard} from "solady/utils/ReentrancyGuard.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {ERC20 as SolmateERC20} from "solmate/tokens/ERC20.sol";
@@ -12,11 +13,14 @@ import {IRewardsDistributor} from "src/interfaces/IRewardsDistributor.sol";
 import {IRouter} from "src/interfaces/IRouter.sol";
 import {IWETH} from "src/interfaces/IWETH.sol";
 
-contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
+contract MinerETH is ERC20, Initializable, ReentrancyGuard {
+    using LibString for string;
     using SafeTransferLib for address;
 
     address private constant _SWAP_REFERRER = address(0);
     uint256 private constant _DEPOSIT_BUFFER = 10;
+    string private constant _TOKEN_NAME_PREFIX = "Brrito Miner-ETH/";
+    string private constant _TOKEN_SYMBOL_PREFIX = "brrMINER-ETH/";
     IBrrETH private constant _BRR_ETH =
         IBrrETH(0xf1288441F094d0D73bcA4E57dDd07829B34de681);
     IBrrETHRedeemHelper private constant _BRR_ETH_HELPER =
@@ -25,14 +29,18 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
         IRouter(0xe88483B5901FA3537355C4324ccF92a8d4155260);
     IWETH private constant _WETH =
         IWETH(0x4200000000000000000000000000000000000006);
-    string private _tokenName;
-    string private _tokenSymbol;
-    address private _rewardToken;
+    string private _name;
+    string private _symbol;
     bytes32 private _pair;
-    IRewardsDistributor private _rewardsDistributor;
-    address private _rewardsStore;
+    address public rewardToken;
+    IRewardsDistributor public rewardsDistributor;
+    address public rewardsStore;
 
-    event Deposit(address indexed msgSender, uint256 amount);
+    event Deposit(
+        address indexed msgSender,
+        bytes32 indexed memo,
+        uint256 amount
+    );
     event Withdraw(address indexed msgSender, uint256 amount);
     event Mine(address indexed msgSender, uint256 interest, uint256 rewards);
     event ClaimRewards(address indexed msgSender, uint256 rewards);
@@ -49,28 +57,26 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
     receive() external payable {}
 
     constructor() {
+        // Prevent implementation from being initialized.
         _disableInitializers();
     }
 
     function initialize(
-        string memory tokenName,
-        string memory tokenSymbol,
-        address rewardToken,
-        address rewardsDistributor,
-        address rewardsStore
+        address _rewardToken,
+        address _rewardsDistributor,
+        address _rewardsStore
     ) external initializer {
-        if (bytes(tokenName).length == 0) revert InvalidTokenName();
-        if (bytes(tokenSymbol).length == 0) revert InvalidTokenSymbol();
-        if (rewardToken == address(0)) revert InvalidAddress();
-        if (rewardsDistributor == address(0)) revert InvalidAddress();
-        if (rewardsStore == address(0)) revert InvalidAddress();
+        if (_rewardToken == address(0)) revert InvalidAddress();
+        if (_rewardsDistributor == address(0)) revert InvalidAddress();
+        if (_rewardsStore == address(0)) revert InvalidAddress();
 
-        _tokenName = tokenName;
-        _tokenSymbol = tokenSymbol;
-        _rewardToken = rewardToken;
-        _pair = keccak256(abi.encodePacked(address(_WETH), rewardToken));
-        _rewardsDistributor = IRewardsDistributor(rewardsDistributor);
-        _rewardsStore = rewardsStore;
+        string memory rewardTokenName = ERC20(_rewardToken).name();
+        _name = string.concat(_TOKEN_NAME_PREFIX, rewardTokenName);
+        _symbol = string.concat(_TOKEN_SYMBOL_PREFIX, rewardTokenName);
+        _pair = keccak256(abi.encodePacked(address(_WETH), _rewardToken));
+        rewardToken = _rewardToken;
+        rewardsDistributor = IRewardsDistributor(_rewardsDistributor);
+        rewardsStore = _rewardsStore;
 
         address(_WETH).safeApprove(address(_ROUTER), type(uint256).max);
         address(_BRR_ETH).safeApprove(
@@ -90,22 +96,22 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
         uint256
     ) internal override {
         if (from == address(0)) {
-            _rewardsDistributor.accrue(SolmateERC20(address(this)), to);
+            rewardsDistributor.accrue(SolmateERC20(address(this)), to);
         } else if (to == address(0)) {
-            _rewardsDistributor.accrue(SolmateERC20(address(this)), from);
+            rewardsDistributor.accrue(SolmateERC20(address(this)), from);
         } else {
-            _rewardsDistributor.accrue(SolmateERC20(address(this)), from, to);
+            rewardsDistributor.accrue(SolmateERC20(address(this)), from, to);
         }
     }
 
     /// @notice Returns the name of the token.
     function name() public view override returns (string memory) {
-        return _tokenName;
+        return _name;
     }
 
     /// @notice Returns the symbol of the token.
     function symbol() public view override returns (string memory) {
-        return _tokenSymbol;
+        return _symbol;
     }
 
     /// @notice Returns the decimals places of the token.
@@ -113,6 +119,11 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
         return 18;
     }
 
+    /**
+     * @notice Mine rewards.
+     * @return interest  uint256  Interest generated.
+     * @return rewards   uint256  Rewards mined.
+     */
     function _mine() private returns (uint256 interest, uint256 rewards) {
         _BRR_ETH.harvest();
 
@@ -137,15 +148,15 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
             if (quote != 0) {
                 rewards = _ROUTER.swap(
                     address(_WETH),
-                    _rewardToken,
+                    rewardToken,
                     interest,
                     quote,
                     index,
                     _SWAP_REFERRER
                 );
 
-                _rewardToken.safeTransfer(address(_rewardsStore), rewards);
-                _rewardsDistributor.accrue(
+                rewardToken.safeTransfer(address(rewardsStore), rewards);
+                rewardsDistributor.accrue(
                     SolmateERC20(address(this)),
                     msg.sender
                 );
@@ -160,8 +171,11 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
         return _mine();
     }
 
-    /// @notice Deposit assets.
-    function deposit() external payable nonReentrant {
+    /**
+     * @notice Deposit assets.
+     * @param  memo  string  Arbitrary data for offchain tracking purposes.
+     */
+    function deposit(string calldata memo) external payable nonReentrant {
         if (msg.value == 0) revert InvalidAmount();
 
         _WETH.deposit{value: msg.value}();
@@ -170,7 +184,7 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
         _BRR_ETH.deposit{value: msg.value}(address(this));
         _mint(msg.sender, msg.value);
 
-        emit Deposit(msg.sender, msg.value);
+        emit Deposit(msg.sender, memo.packOne(), msg.value);
     }
 
     /**
@@ -204,9 +218,9 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
     function claimRewards() external nonReentrant returns (uint256 rewards) {
         _mine();
 
-        rewards = _rewardsDistributor.rewardsAccrued(msg.sender);
+        rewards = rewardsDistributor.rewardsAccrued(msg.sender);
 
-        if (rewards != 0) _rewardsDistributor.claimRewards(msg.sender);
+        if (rewards != 0) rewardsDistributor.claimRewards(msg.sender);
 
         emit ClaimRewards(msg.sender, rewards);
     }
