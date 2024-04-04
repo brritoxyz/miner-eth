@@ -13,46 +13,57 @@ import {InitializableMinerETH} from "src/InitializableMinerETH.sol";
 contract MinerETHFactory {
     using LibClone for address;
 
+    struct Deployment {
+        address miner;
+        address flywheel;
+        address dynamicRewards;
+        address rewardsStore;
+    }
+
     string private constant _TOKEN_NAME_PREFIX = "Brrito Miner-";
     string private constant _TOKEN_SYMBOL_PREFIX = "brrMINER-";
     address private immutable implementation =
         address(new InitializableMinerETH());
 
+    mapping(address rewardToken => Deployment) public deployments;
+
     function deploy(
         string calldata tokenPair,
         address rewardToken
-    )
-        external
-        returns (
-            address miner,
-            address flywheel,
-            address dynamicRewards,
-            address rewardsStore
-        )
-    {
-        miner = implementation.clone();
-        flywheel = address(
-            new FlywheelCore(
-                ERC20(rewardToken),
-                IFlywheelRewards(address(0)),
-                IFlywheelBooster(address(0)),
-                address(this),
-                Authority(address(0))
-            )
-        );
-        dynamicRewards = address(new DynamicRewards(FlywheelCore(flywheel)));
-        rewardsStore = address(DynamicRewards(dynamicRewards).rewardsStore());
+    ) external returns (Deployment memory) {
+        Deployment storage deployment = deployments[rewardToken];
 
-        FlywheelCore(flywheel).setFlywheelRewards(
-            DynamicRewards(dynamicRewards)
+        if (deployment.miner != address(0)) return deployment;
+
+        InitializableMinerETH miner = InitializableMinerETH(
+            payable(implementation.clone())
         );
-        InitializableMinerETH(payable(miner)).initialize(
+        FlywheelCore flywheel = new FlywheelCore(
+            ERC20(rewardToken),
+            IFlywheelRewards(address(0)),
+            IFlywheelBooster(address(0)),
+            address(this),
+            Authority(address(0))
+        );
+        DynamicRewards dynamicRewards = new DynamicRewards(flywheel);
+        address rewardsStore = address(dynamicRewards.rewardsStore());
+
+        // Store the deployment to enable ease of retrieval and preventing redundant deployments.
+        deployment.miner = address(miner);
+        deployment.miner = address(flywheel);
+        deployment.miner = address(dynamicRewards);
+        deployment.rewardsStore = rewardsStore;
+
+        flywheel.setFlywheelRewards(dynamicRewards);
+        miner.initialize(
             string.concat(_TOKEN_NAME_PREFIX, tokenPair),
             string.concat(_TOKEN_SYMBOL_PREFIX, tokenPair),
             rewardToken,
-            flywheel,
+            address(flywheel),
             rewardsStore
         );
-        FlywheelCore(flywheel).addStrategyForRewards(ERC20(miner));
+        flywheel.addStrategyForRewards(ERC20(address(miner)));
+
+        return deployment;
     }
 }
