@@ -20,17 +20,18 @@ contract MinerETHFactory {
         address rewardsStore;
     }
 
-    string private constant _TOKEN_NAME_PREFIX = "Brrito Miner-";
-    string private constant _TOKEN_SYMBOL_PREFIX = "brrMINER-";
     address private immutable implementation =
         address(new InitializableMinerETH());
 
     mapping(address rewardToken => Deployment) public deployments;
 
-    function deploy(
-        string calldata tokenPair,
-        address rewardToken
-    ) external returns (Deployment memory) {
+    event Deploy(address rewardToken);
+
+    error InvalidRewardToken();
+
+    function deploy(address rewardToken) external returns (Deployment memory) {
+        if (rewardToken == address(0)) revert InvalidRewardToken();
+
         Deployment storage deployment = deployments[rewardToken];
 
         if (deployment.miner != address(0)) return deployment;
@@ -47,22 +48,25 @@ contract MinerETHFactory {
         );
         DynamicRewards dynamicRewards = new DynamicRewards(flywheel);
         address rewardsStore = address(dynamicRewards.rewardsStore());
+        string memory rewardTokenName = ERC20(rewardToken).name();
 
         // Store the deployment to enable ease of retrieval and preventing redundant deployments.
         deployment.miner = address(miner);
-        deployment.miner = address(flywheel);
-        deployment.miner = address(dynamicRewards);
+        deployment.flywheel = address(flywheel);
+        deployment.dynamicRewards = address(dynamicRewards);
         deployment.rewardsStore = rewardsStore;
 
         flywheel.setFlywheelRewards(dynamicRewards);
         miner.initialize(
-            string.concat(_TOKEN_NAME_PREFIX, tokenPair),
-            string.concat(_TOKEN_SYMBOL_PREFIX, tokenPair),
+            string.concat("Brrito Miner-ETH/", rewardTokenName),
+            string.concat("brrMINER-ETH/", rewardTokenName),
             rewardToken,
             address(flywheel),
             rewardsStore
         );
         flywheel.addStrategyForRewards(ERC20(address(miner)));
+
+        emit Deploy(rewardToken);
 
         return deployment;
     }
