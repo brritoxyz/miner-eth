@@ -48,6 +48,10 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
      */
     receive() external payable {}
 
+    constructor() {
+        _disableInitializers();
+    }
+
     function initialize(
         string memory tokenName,
         string memory tokenSymbol,
@@ -64,7 +68,7 @@ contract InitializableMinerETH is Initializable, ERC20, ReentrancyGuard {
         _tokenName = tokenName;
         _tokenSymbol = tokenSymbol;
         _rewardToken = rewardToken;
-        _pair = keccak256(abi.encodePacked(address(_WETH), _rewardToken));
+        _pair = keccak256(abi.encodePacked(address(_WETH), rewardToken));
         _rewardsDistributor = IRewardsDistributor(rewardsDistributor);
         _rewardsStore = rewardsStore;
 

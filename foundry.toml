@@ -6,6 +6,7 @@ libs = ['lib']
 verbosity = 3
 optimizer = false
 via_ir = false
+evm_version = 'cancun'
 
 [fuzz]
 runs = 10

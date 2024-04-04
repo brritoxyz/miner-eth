@@ -18,39 +18,41 @@ contract MinerETHFactory {
     address private immutable implementation =
         address(new InitializableMinerETH());
 
-    constructor() {
-        // Prevent implementation from being initialized by others.
-        InitializableMinerETH(payable(implementation)).initialize(
-            _TOKEN_NAME_PREFIX,
-            _TOKEN_SYMBOL_PREFIX,
-            address(0xdead),
-            address(0xdead),
-            address(0xdead)
-        );
-    }
-
     function deploy(
         string calldata tokenPair,
         address rewardToken
-    ) external returns (address clone) {
-        clone = implementation.clone();
-        FlywheelCore flywheel = new FlywheelCore(
-            ERC20(rewardToken),
-            IFlywheelRewards(address(0)),
-            IFlywheelBooster(address(0)),
-            address(this),
-            Authority(address(0))
+    )
+        external
+        returns (
+            address miner,
+            address flywheel,
+            address dynamicRewards,
+            address rewardsStore
+        )
+    {
+        miner = implementation.clone();
+        flywheel = address(
+            new FlywheelCore(
+                ERC20(rewardToken),
+                IFlywheelRewards(address(0)),
+                IFlywheelBooster(address(0)),
+                address(this),
+                Authority(address(0))
+            )
         );
-        DynamicRewards dynamicRewards = new DynamicRewards(flywheel);
+        dynamicRewards = address(new DynamicRewards(FlywheelCore(flywheel)));
+        rewardsStore = address(DynamicRewards(dynamicRewards).rewardsStore());
 
-        flywheel.setFlywheelRewards(dynamicRewards);
-        InitializableMinerETH(payable(clone)).initialize(
+        FlywheelCore(flywheel).setFlywheelRewards(
+            DynamicRewards(dynamicRewards)
+        );
+        InitializableMinerETH(payable(miner)).initialize(
             string.concat(_TOKEN_NAME_PREFIX, tokenPair),
             string.concat(_TOKEN_SYMBOL_PREFIX, tokenPair),
             rewardToken,
-            address(flywheel),
-            address(dynamicRewards.rewardsStore())
+            flywheel,
+            rewardsStore
         );
-        flywheel.addStrategyForRewards(ERC20(clone));
+        FlywheelCore(flywheel).addStrategyForRewards(ERC20(miner));
     }
 }
