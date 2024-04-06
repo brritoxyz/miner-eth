@@ -80,9 +80,11 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
         if (_rewardsDistributor == address(0)) revert InvalidAddress();
         if (_rewardsStore == address(0)) revert InvalidAddress();
 
-        string memory rewardTokenName = ERC20(_rewardToken).name();
-        _name = string.concat(_TOKEN_NAME_PREFIX, rewardTokenName);
-        _symbol = string.concat(_TOKEN_SYMBOL_PREFIX, rewardTokenName);
+        _name = string.concat(_TOKEN_NAME_PREFIX, ERC20(_rewardToken).name());
+        _symbol = string.concat(
+            _TOKEN_SYMBOL_PREFIX,
+            ERC20(_rewardToken).symbol()
+        );
         _pair = keccak256(abi.encodePacked(address(_WETH), _rewardToken));
         rewardToken = _rewardToken;
         rewardsDistributor = IRewardsDistributor(_rewardsDistributor);

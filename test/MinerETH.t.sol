@@ -265,7 +265,10 @@ contract MinerETHTest is Test {
     }
 
     function testDepositFuzz(uint256 amount, string calldata memo) external {
-        amount = bound(amount, 1e6, 100e18);
+        amount = bound(amount, 1e3, 1_000 ether);
+
+        deal(address(this), amount);
+
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
 
@@ -333,8 +336,9 @@ contract MinerETHTest is Test {
     }
 
     function testWithdrawFuzz(uint256 amount, bool shouldMine) external {
-        amount = bound(amount, 1e6, 100e18);
+        amount = bound(amount, 1e6, 1_000 ether);
 
+        deal(address(this), amount);
         miner.deposit{value: amount}("");
         skip(60);
 
@@ -366,9 +370,10 @@ contract MinerETHTest is Test {
         bool shouldMine,
         uint256 withdrawalDivisor
     ) external {
-        amount = bound(amount, 1e6, 100e18);
+        amount = bound(amount, 1e3, 1_000 ether);
         withdrawalDivisor = bound(withdrawalDivisor, 1, type(uint8).max);
 
+        deal(address(this), amount);
         miner.deposit{value: amount}("");
         skip(60);
 
@@ -437,8 +442,9 @@ contract MinerETHTest is Test {
     }
 
     function testClaimRewardsFuzz(uint256 amount) external {
-        amount = bound(amount, 1e6, 100e18);
+        amount = bound(amount, 1e6, 1_000 ether);
 
+        deal(address(this), amount);
         miner.deposit{value: amount}("");
 
         skip(5);
