@@ -17,6 +17,7 @@ contract MinerETHFactoryTest is Test {
         0x787417F293260E9800327ABFeE99874B108a6c5b;
     address public constant ROUTER = 0xe88483B5901FA3537355C4324ccF92a8d4155260;
     address public constant WETH = 0x4200000000000000000000000000000000000006;
+    uint256 public constant DEAD_SHARES_VALUE = 0.01 ether;
     MinerETHFactory public immutable factory = new MinerETHFactory();
 
     /*//////////////////////////////////////////////////////////////
@@ -25,14 +26,25 @@ contract MinerETHFactoryTest is Test {
 
     function testCannotDeployInvalidRewardToken() external {
         address rewardToken = address(0);
+        uint256 msgValue = DEAD_SHARES_VALUE;
 
         vm.expectRevert(MinerETHFactory.InvalidRewardToken.selector);
 
-        factory.deploy(rewardToken);
+        factory.deploy{value: msgValue}(rewardToken);
+    }
+
+    function testCannotDeployInsufficientMsgValue() external {
+        address rewardToken = ELON;
+        uint256 msgValue = 0;
+
+        vm.expectRevert(MinerETHFactory.InsufficientMsgValue.selector);
+
+        factory.deploy{value: msgValue}(rewardToken);
     }
 
     function testDeploy() external {
         address rewardToken = ELON;
+        uint256 msgValue = DEAD_SHARES_VALUE;
 
         assertEq(address(0), factory.deployments(rewardToken));
 
@@ -40,7 +52,7 @@ contract MinerETHFactoryTest is Test {
 
         emit MinerETHFactory.Deploy(rewardToken);
 
-        address clone = factory.deploy(rewardToken);
+        address clone = factory.deploy{value: msgValue}(rewardToken);
 
         assertTrue(clone != address(0));
         assertEq(clone, factory.deployments(rewardToken));

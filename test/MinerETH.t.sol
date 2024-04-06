@@ -33,6 +33,7 @@ contract MinerETHTest is Test {
     string public constant TOKEN_NAME = "Brrito Miner-ETH/ElonRWA";
     string public constant TOKEN_SYMBOL = "brrMINER-ETH/ElonRWA";
     uint256 public constant TOKEN_DECIMALS = 18;
+    uint256 public constant DEAD_SHARES_VALUE = 0.01 ether;
     IRewardsDistributor public immutable rewardsDistributor;
     address public immutable dynamicRewards;
     address public immutable rewardsStore;
@@ -42,7 +43,15 @@ contract MinerETHTest is Test {
     receive() external payable {}
 
     constructor() {
-        miner = MinerETH(payable(factory.deploy(ELON)));
+        deal(address(this), DEAD_SHARES_VALUE);
+
+        miner = MinerETH(
+            payable(factory.deploy{value: DEAD_SHARES_VALUE}(ELON))
+        );
+
+        // Reverts
+        skip(1);
+
         rewardsDistributor = IRewardsDistributor(
             address(miner.rewardsDistributor())
         );
