@@ -22,7 +22,7 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
     using SafeTransferLib for address;
 
     address private constant _SWAP_REFERRER = address(0);
-    uint256 private constant _DEPOSIT_BUFFER = 10;
+    uint256 private constant _ROUNDING_BUFFER = 10;
     string private constant _TOKEN_NAME_PREFIX = "Brrito Miner-ETH/";
     string private constant _TOKEN_SYMBOL_PREFIX = "brrMINER-ETH/";
     IBrrETH private constant _BRR_ETH =
@@ -135,15 +135,18 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
      * @return rewards   uint256  Rewards mined.
      */
     function _mine() private returns (uint256 interest, uint256 rewards) {
+        uint256 _totalSupply = totalSupply();
+
+        if (_totalSupply == 0) return (0, 0);
+
         _BRR_ETH.harvest();
+        _BRR_ETH_HELPER.redeem(
+            _BRR_ETH.balanceOf(address(this)),
+            address(this)
+        );
 
-        uint256 _totalSupplyWithBuffer = totalSupply() + _DEPOSIT_BUFFER;
-        uint256 sharesBalance = _BRR_ETH.balanceOf(address(this));
-
-        if (sharesBalance == 0) return (0, 0);
-
-        _BRR_ETH_HELPER.redeem(sharesBalance, address(this));
-        _BRR_ETH.deposit{value: _totalSupplyWithBuffer}(address(this));
+        // Add a small 10 wei buffer (taken from interest accrued) to offset Comet rounding.
+        _BRR_ETH.deposit{value: _totalSupply + _ROUNDING_BUFFER}(address(this));
 
         interest = address(this).balance;
 
@@ -214,10 +217,10 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
         }
 
         _burn(msg.sender, amount);
-
-        uint256 sharesBalance = _BRR_ETH.balanceOf(address(this));
-
-        _BRR_ETH_HELPER.redeem(sharesBalance, address(this));
+        _BRR_ETH_HELPER.redeem(
+            _BRR_ETH.balanceOf(address(this)),
+            address(this)
+        );
 
         uint256 redepositAmount = address(this).balance - amount;
 
