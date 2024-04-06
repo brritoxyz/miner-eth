@@ -170,6 +170,9 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
                     SolmateERC20(address(this)),
                     msg.sender
                 );
+            } else {
+                // Unwrap ETH, which will roll over to the next `mine`.
+                _WETH.withdraw(interest);
             }
         }
 
@@ -199,12 +202,17 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
 
     /**
      * @notice Withdraw assets.
-     * @param  amount  uint256  Token amount.
+     * @param  amount      uint256  Token amount.
+     * @param  shouldMine  bool     Whether to mine and accrue rewards prior to withdrawing.
      */
-    function withdraw(uint256 amount) external nonReentrant {
+    function withdraw(uint256 amount, bool shouldMine) external nonReentrant {
         if (amount == 0) revert InvalidAmount();
+        if (shouldMine) {
+            _mine();
+        } else {
+            _BRR_ETH.harvest();
+        }
 
-        _mine();
         _burn(msg.sender, amount);
 
         uint256 sharesBalance = _BRR_ETH.balanceOf(address(this));

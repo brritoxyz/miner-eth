@@ -295,14 +295,16 @@ contract MinerETHTest is Test {
 
     function testCannotWithrawInvalidAmount() external {
         uint256 amount = 0;
+        bool shouldMine = true;
 
         vm.expectRevert(MinerETH.InvalidAmount.selector);
 
-        miner.withdraw(amount);
+        miner.withdraw(amount, shouldMine);
     }
 
     function testWithdraw() external {
         uint256 amount = 1e18;
+        bool shouldMine = true;
 
         miner.deposit{value: amount}("");
         skip(60);
@@ -314,7 +316,7 @@ contract MinerETHTest is Test {
 
         emit MinerETH.Withdraw(address(this), amount);
 
-        miner.withdraw(amount);
+        miner.withdraw(amount, shouldMine);
 
         uint256 minerTotalSupplyAfter = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
@@ -330,7 +332,7 @@ contract MinerETHTest is Test {
         );
     }
 
-    function testWithdrawFuzz(uint256 amount) external {
+    function testWithdrawFuzz(uint256 amount, bool shouldMine) external {
         amount = bound(amount, 1e6, 100e18);
 
         miner.deposit{value: amount}("");
@@ -343,7 +345,7 @@ contract MinerETHTest is Test {
 
         emit MinerETH.Withdraw(address(this), amount);
 
-        miner.withdraw(amount);
+        miner.withdraw(amount, shouldMine);
 
         uint256 minerTotalSupplyAfter = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
@@ -361,6 +363,7 @@ contract MinerETHTest is Test {
 
     function testWithdrawPartialFuzz(
         uint256 amount,
+        bool shouldMine,
         uint256 withdrawalDivisor
     ) external {
         amount = bound(amount, 1e6, 100e18);
@@ -377,7 +380,7 @@ contract MinerETHTest is Test {
 
         emit MinerETH.Withdraw(address(this), withdrawalAmount);
 
-        miner.withdraw(withdrawalAmount);
+        miner.withdraw(withdrawalAmount, shouldMine);
 
         uint256 minerTotalSupplyAfter = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
