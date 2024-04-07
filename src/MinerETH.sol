@@ -57,8 +57,6 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
 
     error InvalidAddress();
     error InvalidAmount();
-    error InvalidTokenName();
-    error InvalidTokenSymbol();
 
     /**
      * @notice There should never be ETH sitting in this contract, but in the event that there
@@ -170,7 +168,7 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
                     _SWAP_REFERRER
                 );
 
-                rewardToken.safeTransfer(address(rewardsStore), rewards);
+                rewardToken.safeTransfer(rewardsStore, rewards);
                 rewardsDistributor.accrue(
                     SolmateERC20(address(this)),
                     msg.sender
@@ -207,17 +205,12 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
 
     /**
      * @notice Withdraw assets.
-     * @param  amount      uint256  Token amount.
-     * @param  shouldMine  bool     Whether to mine and accrue rewards prior to withdrawing.
+     * @param  amount  uint256  Token amount.
      */
-    function withdraw(uint256 amount, bool shouldMine) external nonReentrant {
+    function withdraw(uint256 amount) external nonReentrant {
         if (amount == 0) revert InvalidAmount();
-        if (shouldMine) {
-            _mine();
-        } else {
-            _BRR_ETH.harvest();
-        }
 
+        _mine();
         _burn(msg.sender, amount);
         _BRR_ETH_HELPER.redeem(
             _BRR_ETH.balanceOf(address(this)),
