@@ -152,8 +152,8 @@ contract MinerETHTest is Test {
         uint256 assetsBefore = BRR_ETH.convertToAssets(sharesBefore);
 
         // Calling mine multiple times in the same block will lead to less shares, less assets.
-        // As of this writing, 255 iterations exceeds the block gas limit.
-        for (uint256 i = 0; i < 255; ++i) {
+        // As of this writing, 500 iterations exceeds the 60M block gas limit.
+        for (uint256 i = 0; i < 500; ++i) {
             miner.mine();
         }
 
@@ -163,13 +163,14 @@ contract MinerETHTest is Test {
         assertLe(sharesAfter, sharesBefore);
         assertLe(assetsAfter, assetsBefore);
 
-        vm.roll(block.number + 1);
+        skip(1);
 
         uint256 assetsAfterInterestAccrual = BRR_ETH.convertToAssets(
             BRR_ETH.balanceOf(address(miner))
         );
 
-        // The interest accrued from the initial deposit, in a single block, will exceed the rounding losses.
+        // The interest accrued from the initial deposit, in a single block, will exceed the rounding losses
+        // resulting from 500 iterations of calling `mine`.
         assertLe(assetsAfter, assetsAfterInterestAccrual);
     }
 

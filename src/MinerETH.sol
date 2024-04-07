@@ -14,7 +14,8 @@ import {IRouter} from "src/interfaces/IRouter.sol";
 import {IWETH} from "src/interfaces/IWETH.sol";
 
 /**
- * @title Deposit ETH and earn token rewards. Withdraw 100% of your principal at any time.
+ * @title Brrito token mining vaults.
+ * @notice Deposit ETH and earn token rewards. Withdraw 100% of your principal at any time.
  * @author Brrito.xyz (kp | kphed.eth)
  */
 contract MinerETH is ERC20, Initializable, ReentrancyGuard {
@@ -226,7 +227,7 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
         if (redepositAmount != 0)
             _BRR_ETH.deposit{value: redepositAmount}(address(this));
 
-        msg.sender.safeTransferETH(amount);
+        msg.sender.forceSafeTransferETH(amount);
 
         emit Withdraw(msg.sender, amount);
     }
