@@ -53,7 +53,7 @@ contract MinerETHTest is Test {
         assertEq(TOKEN_NAME, miner.name());
         assertEq(TOKEN_SYMBOL, miner.symbol());
 
-        deal(address(this), 1000e18);
+        deal(address(this), 1_000 ether);
 
         miner.deposit{value: 0.01 ether}("");
     }
@@ -199,65 +199,32 @@ contract MinerETHTest is Test {
         );
 
         // Invariant.
-        assertEq(
-            minerTotalSupply,
-            miner.totalSupply(),
-            "Should not affect `totalSupply()`."
-        );
+        assertEq(minerTotalSupply, miner.totalSupply());
         assertEq(
             dynamicRewardsBalance + rewards,
-            ELON.balanceOf(dynamicRewards),
-            "Should transfer rewards to `dynamicRewards`."
+            ELON.balanceOf(dynamicRewards)
         );
-        assertEq(
-            lastUpdatedTimestamp,
-            block.timestamp,
-            "Should update `lastUpdatedTimestamp` to `mine()` block."
-        );
-        assertEq(
-            0,
-            address(WETH).balanceOf(address(miner)),
-            "Should be no remaining WETH."
-        );
-        assertEq(
-            0,
-            ELON.balanceOf(address(miner)),
-            "Should be no remaining rewards."
-        );
-        assertLt(0, interest, "Should be non-zero `interest`.");
-        assertLt(0, rewards, "Should be non-zero `rewards`.");
-        assertLt(0, strategyIndex, "Should be non-zero `strategyIndex`.");
-        assertLt(0, rewardsAccrued, "Should be non-zero `rewardsAccrued`.");
+        assertEq(lastUpdatedTimestamp, block.timestamp);
+        assertEq(0, address(WETH).balanceOf(address(miner)));
+        assertEq(0, ELON.balanceOf(address(miner)));
+        assertLt(0, interest);
+        assertLt(0, rewards);
+        assertLt(0, strategyIndex);
+        assertLt(0, rewardsAccrued);
 
         // Estimates.
-        assertLe(
-            estimatedRedepositShares,
-            BRR_ETH.balanceOf(address(miner)),
-            "Should have received more brrETH shares."
-        );
-        assertLe(
-            estimatedInterest,
-            interest,
-            "Should have a greater `interest`."
-        );
-        assertLe(estimatedRewards, rewards, "Should have a greater `rewards`.");
-        assertLe(
-            estimatedStrategyIndex,
-            strategyIndex,
-            "Should have a greater `strategyIndex`."
-        );
-        assertLe(
-            estimatedRewardsAccrued,
-            rewardsAccrued,
-            "Should have a greater `rewardsAccrued`."
-        );
+        assertLe(estimatedRedepositShares, BRR_ETH.balanceOf(address(miner)));
+        assertLe(estimatedInterest, interest);
+        assertLe(estimatedRewards, rewards);
+        assertLe(estimatedStrategyIndex, strategyIndex);
+        assertLe(estimatedRewardsAccrued, rewardsAccrued);
     }
 
-    function testMineFuzz(uint256 blocksRolled) external {
-        blocksRolled = bound(blocksRolled, 1, 1_000);
+    function testMineFuzz(uint256 skipSeconds) external {
+        skipSeconds = bound(skipSeconds, 1, 1_000);
 
-        // Forward a block to accrue interest.
-        vm.roll(block.number + blocksRolled);
+        // Forward timestamp to accrue interest.
+        skip(skipSeconds);
 
         // Harvesting before calling `mine` makes it easier for us to calculate expected values.
         BRR_ETH.harvest();
@@ -318,7 +285,7 @@ contract MinerETHTest is Test {
     function testDeposit() external {
         BRR_ETH.harvest();
 
-        uint256 amount = 1e18;
+        uint256 amount = 1 ether;
         string memory memo = "test";
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupplyBefore = miner.totalSupply();
@@ -436,7 +403,7 @@ contract MinerETHTest is Test {
     }
 
     function testWithdraw() external {
-        uint256 amount = 1e18;
+        uint256 amount = 1 ether;
 
         miner.deposit{value: amount}("");
 
@@ -623,7 +590,7 @@ contract MinerETHTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function testClaimRewards() external {
-        uint256 amount = 1e18;
+        uint256 amount = 1 ether;
 
         miner.deposit{value: amount}("");
 
@@ -659,7 +626,7 @@ contract MinerETHTest is Test {
         uint256 amount,
         uint256 skipSeconds
     ) external {
-        amount = bound(amount, 1e3, 1_000 ether);
+        amount = bound(amount, 1e2, 1_000 ether);
         skipSeconds = bound(skipSeconds, 1, 365 days);
 
         deal(address(this), amount);
