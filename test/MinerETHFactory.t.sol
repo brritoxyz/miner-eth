@@ -26,25 +26,14 @@ contract MinerETHFactoryTest is Test {
 
     function testCannotDeployInvalidRewardToken() external {
         address rewardToken = address(0);
-        uint256 msgValue = DEAD_SHARES_VALUE;
 
         vm.expectRevert(MinerETHFactory.InvalidRewardToken.selector);
 
-        factory.deploy{value: msgValue}(rewardToken);
-    }
-
-    function testCannotDeployInsufficientMsgValue() external {
-        address rewardToken = ELON;
-        uint256 msgValue = 0;
-
-        vm.expectRevert(MinerETHFactory.InsufficientMsgValue.selector);
-
-        factory.deploy{value: msgValue}(rewardToken);
+        factory.deploy(rewardToken);
     }
 
     function testDeploy() external {
         address rewardToken = ELON;
-        uint256 msgValue = DEAD_SHARES_VALUE;
 
         assertEq(address(0), factory.deployments(rewardToken));
 
@@ -52,7 +41,7 @@ contract MinerETHFactoryTest is Test {
 
         emit MinerETHFactory.Deploy(rewardToken);
 
-        address clone = factory.deploy{value: msgValue}(rewardToken);
+        address clone = factory.deploy(rewardToken);
 
         assertTrue(clone != address(0));
         assertEq(clone, factory.deployments(rewardToken));

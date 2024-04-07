@@ -22,7 +22,6 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
     using SafeTransferLib for address;
 
     address private constant _SWAP_REFERRER = address(0);
-    uint256 private constant _ROUNDING_BUFFER = 10;
     string private constant _TOKEN_NAME_PREFIX = "Brrito Miner-ETH/";
     string private constant _TOKEN_SYMBOL_PREFIX = "brrMINER-ETH/";
     IBrrETH private constant _BRR_ETH =
@@ -145,37 +144,42 @@ contract MinerETH is ERC20, Initializable, ReentrancyGuard {
             address(this)
         );
 
-        // Add a small 10 wei buffer (taken from interest accrued) to offset Comet rounding.
-        _BRR_ETH.deposit{value: _totalSupply + _ROUNDING_BUFFER}(address(this));
+        // Comet rounding may lead to the redeemed ETH being less than the total supply,
+        // but the interest accrued per block should more than make up for it.
+        if (address(this).balance < _totalSupply) {
+            _BRR_ETH.deposit{value: address(this).balance}(address(this));
+        } else {
+            _BRR_ETH.deposit{value: _totalSupply}(address(this));
 
-        interest = address(this).balance;
+            interest = address(this).balance;
 
-        if (interest != 0) {
-            _WETH.deposit{value: interest}();
+            if (interest != 0) {
+                _WETH.deposit{value: interest}();
 
-            (uint256 index, uint256 quote) = _ROUTER.getSwapOutput(
-                _pair,
-                interest
-            );
-
-            if (quote != 0) {
-                rewards = _ROUTER.swap(
-                    address(_WETH),
-                    rewardToken,
-                    interest,
-                    quote,
-                    index,
-                    _SWAP_REFERRER
+                (uint256 index, uint256 quote) = _ROUTER.getSwapOutput(
+                    _pair,
+                    interest
                 );
 
-                rewardToken.safeTransfer(rewardsStore, rewards);
-                rewardsDistributor.accrue(
-                    SolmateERC20(address(this)),
-                    msg.sender
-                );
-            } else {
-                // Unwrap ETH, which will roll over to the next `mine`.
-                _WETH.withdraw(interest);
+                if (quote != 0) {
+                    rewards = _ROUTER.swap(
+                        address(_WETH),
+                        rewardToken,
+                        interest,
+                        quote,
+                        index,
+                        _SWAP_REFERRER
+                    );
+
+                    rewardToken.safeTransfer(rewardsStore, rewards);
+                    rewardsDistributor.accrue(
+                        SolmateERC20(address(this)),
+                        msg.sender
+                    );
+                } else {
+                    // Unwrap ETH, which will roll over to the next `mine`.
+                    _WETH.withdraw(interest);
+                }
             }
         }
 

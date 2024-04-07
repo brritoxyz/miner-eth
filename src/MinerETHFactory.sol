@@ -13,7 +13,6 @@ import {MinerETH} from "src/MinerETH.sol";
 contract MinerETHFactory {
     using LibClone for address;
 
-    uint256 private constant _DEAD_SHARES_VALUE = 0.01 ether;
     address private immutable _implementation = address(new MinerETH());
 
     /// @notice Deployed minimal proxies for each reward token.
@@ -29,11 +28,8 @@ contract MinerETHFactory {
      * @param  rewardToken  address  Reward token.
      * @return clone        address  MinerETH minimal proxy contract.
      */
-    function deploy(
-        address rewardToken
-    ) external payable returns (address clone) {
+    function deploy(address rewardToken) external returns (address clone) {
         if (rewardToken == address(0)) revert InvalidRewardToken();
-        if (msg.value != _DEAD_SHARES_VALUE) revert InsufficientMsgValue();
 
         // If an ETH mining vault exists for the reward token, return the existing deployment address.
         if (deployments[rewardToken] != address(0))
@@ -59,10 +55,6 @@ contract MinerETHFactory {
         miner.initialize(rewardToken, address(flywheel), rewardsStore);
         flywheel.addStrategyForRewards(ERC20(address(miner)));
         flywheel.transferOwnership(address(0));
-
-        // Deposit `msg.value` into the mining vault, which are essentially burned since the
-        // miner tokens cannot be retrieved from this contract.
-        miner.deposit{value: msg.value}("");
 
         emit Deploy(rewardToken);
     }

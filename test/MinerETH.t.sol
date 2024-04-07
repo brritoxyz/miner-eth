@@ -34,24 +34,16 @@ contract MinerETHTest is Test {
     string public constant TOKEN_SYMBOL = "brrMINER-ETH/ElonRWA";
     uint256 public constant TOKEN_DECIMALS = 18;
     uint256 public constant DEAD_SHARES_VALUE = 0.01 ether;
+    MinerETHFactory public immutable factory = new MinerETHFactory();
+    MinerETH public immutable miner;
     IRewardsDistributor public immutable rewardsDistributor;
     address public immutable dynamicRewards;
     address public immutable rewardsStore;
-    MinerETHFactory public immutable factory = new MinerETHFactory();
-    MinerETH public immutable miner;
 
     receive() external payable {}
 
     constructor() {
-        deal(address(this), DEAD_SHARES_VALUE);
-
-        miner = MinerETH(
-            payable(factory.deploy{value: DEAD_SHARES_VALUE}(ELON))
-        );
-
-        // Reverts
-        skip(1);
-
+        miner = MinerETH(payable(factory.deploy(ELON)));
         rewardsDistributor = IRewardsDistributor(
             address(miner.rewardsDistributor())
         );
@@ -63,13 +55,7 @@ contract MinerETHTest is Test {
 
         deal(address(this), 1000e18);
 
-        address(0xbeef).safeTransferETH(1e18);
-
-        vm.prank(address(0xbeef));
-
-        miner.deposit{value: 1e18}("test");
-
-        skip(1 days);
+        miner.deposit{value: 0.01 ether}("");
     }
 
     function _getEstimates()
@@ -85,20 +71,26 @@ contract MinerETHTest is Test {
     {
         uint256 minerTotalSupply = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
-        uint256 redeposit = minerTotalSupply + COMET_SLIPPAGE;
         (uint256 strategyIndex, ) = rewardsDistributor.strategyState(
             SolmateERC20(address(miner))
         );
         uint256 redeemedAssets = BRR_ETH.convertToAssets(minerSharesBalance) -
             COMET_SLIPPAGE;
-        estimatedRedepositShares = BRR_ETH.convertToShares(
-            redeposit - COMET_SLIPPAGE
-        );
-        estimatedInterest = redeemedAssets - redeposit;
-        (, estimatedRewards) = ROUTER.getSwapOutput(
-            keccak256(abi.encodePacked(address(WETH), ELON)),
-            estimatedInterest
-        );
+        uint256 redepositedAssets = (
+            redeemedAssets > minerTotalSupply
+                ? minerTotalSupply
+                : redeemedAssets
+        ) - COMET_SLIPPAGE;
+        estimatedRedepositShares = BRR_ETH.convertToShares(redepositedAssets);
+        estimatedInterest = redeemedAssets > minerTotalSupply
+            ? redeemedAssets - minerTotalSupply
+            : 0;
+
+        if (estimatedInterest != 0)
+            (, estimatedRewards) = ROUTER.getSwapOutput(
+                keccak256(abi.encodePacked(address(WETH), ELON)),
+                estimatedInterest
+            );
         estimatedStrategyIndex =
             ((estimatedRewards * 1e18) / minerTotalSupply) +
             strategyIndex;
@@ -142,15 +134,136 @@ contract MinerETHTest is Test {
                             mine
     //////////////////////////////////////////////////////////////*/
 
+    function testMineZeroTotalSupply() external {
+        MinerETH newMiner = MinerETH(payable(factory.deploy(address(WETH))));
+
+        assertEq(0, newMiner.totalSupply());
+
+        (uint256 interest, uint256 rewards) = newMiner.mine();
+
+        assertEq(0, interest);
+        assertEq(0, rewards);
+    }
+
+    function testMineWithCometDeficit() external {
+        miner.mine();
+
+        uint256 sharesBefore = BRR_ETH.balanceOf(address(miner));
+        uint256 assetsBefore = BRR_ETH.convertToAssets(sharesBefore);
+
+        // Calling mine multiple times in the same block will lead to less shares, less assets.
+        // As of this writing, 255 iterations exceeds the block gas limit.
+        for (uint256 i = 0; i < 255; ++i) {
+            miner.mine();
+        }
+
+        uint256 sharesAfter = BRR_ETH.balanceOf(address(miner));
+        uint256 assetsAfter = BRR_ETH.convertToAssets(sharesAfter);
+
+        assertLe(sharesAfter, sharesBefore);
+        assertLe(assetsAfter, assetsBefore);
+
+        vm.roll(block.number + 1);
+
+        uint256 assetsAfterInterestAccrual = BRR_ETH.convertToAssets(
+            BRR_ETH.balanceOf(address(miner))
+        );
+
+        // The interest accrued from the initial deposit, in a single block, will exceed the rounding losses.
+        assertLe(assetsAfter, assetsAfterInterestAccrual);
+    }
+
     function testMine() external {
-        miner.deposit{value: 1e18}("");
+        // Forward a block to accrue interest.
+        vm.roll(block.number + 1);
 
-        skip(1 days);
-
+        // Harvesting before calling `mine` makes it easier for us to calculate expected values.
         BRR_ETH.harvest();
 
         uint256 minerTotalSupply = miner.totalSupply();
-        uint256 dynamicRewardsElonBalance = ELON.balanceOf(dynamicRewards);
+        uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
+        (
+            uint256 estimatedRedepositShares,
+            uint256 estimatedInterest,
+            uint256 estimatedRewards,
+            uint256 estimatedStrategyIndex,
+            uint256 estimatedRewardsAccrued
+        ) = _getEstimates();
+        (uint256 interest, uint256 rewards) = miner.mine();
+        (
+            uint256 strategyIndex,
+            uint256 lastUpdatedTimestamp
+        ) = rewardsDistributor.strategyState(SolmateERC20(address(miner)));
+        uint256 rewardsAccrued = rewardsDistributor.rewardsAccrued(
+            address(this)
+        );
+
+        // Invariant.
+        assertEq(
+            minerTotalSupply,
+            miner.totalSupply(),
+            "Should not affect `totalSupply()`."
+        );
+        assertEq(
+            dynamicRewardsBalance + rewards,
+            ELON.balanceOf(dynamicRewards),
+            "Should transfer rewards to `dynamicRewards`."
+        );
+        assertEq(
+            lastUpdatedTimestamp,
+            block.timestamp,
+            "Should update `lastUpdatedTimestamp` to `mine()` block."
+        );
+        assertEq(
+            0,
+            address(WETH).balanceOf(address(miner)),
+            "Should be no remaining WETH."
+        );
+        assertEq(
+            0,
+            ELON.balanceOf(address(miner)),
+            "Should be no remaining rewards."
+        );
+        assertLt(0, interest, "Should be non-zero `interest`.");
+        assertLt(0, rewards, "Should be non-zero `rewards`.");
+        assertLt(0, strategyIndex, "Should be non-zero `strategyIndex`.");
+        assertLt(0, rewardsAccrued, "Should be non-zero `rewardsAccrued`.");
+
+        // Estimates.
+        assertLe(
+            estimatedRedepositShares,
+            BRR_ETH.balanceOf(address(miner)),
+            "Should have received more brrETH shares."
+        );
+        assertLe(
+            estimatedInterest,
+            interest,
+            "Should have a greater `interest`."
+        );
+        assertLe(estimatedRewards, rewards, "Should have a greater `rewards`.");
+        assertLe(
+            estimatedStrategyIndex,
+            strategyIndex,
+            "Should have a greater `strategyIndex`."
+        );
+        assertLe(
+            estimatedRewardsAccrued,
+            rewardsAccrued,
+            "Should have a greater `rewardsAccrued`."
+        );
+    }
+
+    function testMineFuzz(uint256 blocksRolled) external {
+        blocksRolled = bound(blocksRolled, 1, 1_000);
+
+        // Forward a block to accrue interest.
+        vm.roll(block.number + blocksRolled);
+
+        // Harvesting before calling `mine` makes it easier for us to calculate expected values.
+        BRR_ETH.harvest();
+
+        uint256 minerTotalSupply = miner.totalSupply();
+        uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
         (
             uint256 estimatedRedepositShares,
             uint256 estimatedInterest,
@@ -170,54 +283,18 @@ contract MinerETHTest is Test {
         // Invariant.
         assertEq(minerTotalSupply, miner.totalSupply());
         assertEq(
-            dynamicRewardsElonBalance + rewards,
+            dynamicRewardsBalance + rewards,
             ELON.balanceOf(dynamicRewards)
         );
         assertEq(lastUpdatedTimestamp, block.timestamp);
         assertEq(0, address(WETH).balanceOf(address(miner)));
         assertEq(0, ELON.balanceOf(address(miner)));
+        assertLt(0, interest);
+        assertLt(0, rewards);
+        assertLt(0, strategyIndex);
+        assertLt(0, rewardsAccrued);
 
         // Estimates.
-        assertLe(estimatedRedepositShares, BRR_ETH.balanceOf(address(miner)));
-        assertLe(estimatedInterest, interest);
-        assertLe(estimatedRewards, rewards);
-        assertLe(estimatedStrategyIndex, strategyIndex);
-        assertLe(estimatedRewardsAccrued, rewardsAccrued);
-    }
-
-    function testMineFuzz(uint256 skipTime) external {
-        skipTime = bound(skipTime, 1, 365 days);
-
-        skip(skipTime);
-
-        BRR_ETH.harvest();
-
-        uint256 minerTotalSupply = miner.totalSupply();
-        uint256 dynamicRewardsElonBalance = ELON.balanceOf(dynamicRewards);
-        (
-            uint256 estimatedRedepositShares,
-            uint256 estimatedInterest,
-            uint256 estimatedRewards,
-            uint256 estimatedStrategyIndex,
-            uint256 estimatedRewardsAccrued
-        ) = _getEstimates();
-        (uint256 interest, uint256 rewards) = miner.mine();
-        (
-            uint256 strategyIndex,
-            uint256 lastUpdatedTimestamp
-        ) = rewardsDistributor.strategyState(SolmateERC20(address(miner)));
-        uint256 rewardsAccrued = rewardsDistributor.rewardsAccrued(
-            address(this)
-        );
-
-        assertEq(minerTotalSupply, miner.totalSupply());
-        assertEq(
-            dynamicRewardsElonBalance + rewards,
-            ELON.balanceOf(dynamicRewards)
-        );
-        assertEq(lastUpdatedTimestamp, block.timestamp);
-        assertEq(0, address(WETH).balanceOf(address(miner)));
-        assertEq(0, ELON.balanceOf(address(miner)));
         assertLe(estimatedRedepositShares, BRR_ETH.balanceOf(address(miner)));
         assertLe(estimatedInterest, interest);
         assertLe(estimatedRewards, rewards);
@@ -239,10 +316,21 @@ contract MinerETHTest is Test {
     }
 
     function testDeposit() external {
+        BRR_ETH.harvest();
+
         uint256 amount = 1e18;
         string memory memo = "test";
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
-        uint256 minerTotalSupply = miner.totalSupply();
+        uint256 minerTotalSupplyBefore = miner.totalSupply();
+        (
+            uint256 estimatedRedepositShares,
+            ,
+            uint256 estimatedRewards,
+            uint256 estimatedStrategyIndex,
+            uint256 estimatedRewardsAccrued
+        ) = _getEstimates();
+        uint256 newShares = BRR_ETH.convertToShares(amount - COMET_SLIPPAGE);
+        uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
 
         vm.expectEmit(true, true, true, true, address(miner));
 
@@ -252,25 +340,57 @@ contract MinerETHTest is Test {
 
         uint256 minerTotalSupplyAfter = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
+        uint256 principalWithSlippage = minerTotalSupplyAfter - COMET_SLIPPAGE;
+        (uint256 strategyIndex, ) = rewardsDistributor.strategyState(
+            SolmateERC20(address(miner))
+        );
+        uint256 rewardsAccrued = rewardsDistributor.rewardsAccrued(
+            address(this)
+        );
 
         // Invariant.
         assertEq(tokenBalanceBefore + amount, miner.balanceOf(address(this)));
-        assertEq(minerTotalSupply + amount, minerTotalSupplyAfter);
+        assertEq(minerTotalSupplyBefore + amount, minerTotalSupplyAfter);
+        assertLt(0, minerTotalSupplyAfter);
+        assertLt(0, minerSharesBalance);
+        assertLt(0, principalWithSlippage);
+        assertLt(0, estimatedRedepositShares);
+        assertLt(0, estimatedRewards);
+        assertLt(0, estimatedStrategyIndex);
+        assertLt(0, estimatedRewardsAccrued);
 
         // Estimates.
         assertLe(
-            minerTotalSupplyAfter,
+            principalWithSlippage,
             BRR_ETH.convertToAssets(minerSharesBalance)
         );
+        assertLe(estimatedRedepositShares + newShares, minerSharesBalance);
+        assertLe(
+            estimatedRewards + dynamicRewardsBalance,
+            ELON.balanceOf(dynamicRewards)
+        );
+        assertLe(estimatedStrategyIndex, strategyIndex);
+        assertLe(estimatedRewardsAccrued, rewardsAccrued);
     }
 
     function testDepositFuzz(uint256 amount, string calldata memo) external {
-        amount = bound(amount, 1e3, 1_000 ether);
+        amount = bound(amount, 1e2, 1_000 ether);
 
         deal(address(this), amount);
 
+        BRR_ETH.harvest();
+
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
-        uint256 minerTotalSupply = miner.totalSupply();
+        uint256 minerTotalSupplyBefore = miner.totalSupply();
+        (
+            uint256 estimatedRedepositShares,
+            ,
+            uint256 estimatedRewards,
+            ,
+
+        ) = _getEstimates();
+        uint256 newShares = BRR_ETH.convertToShares(amount - COMET_SLIPPAGE);
+        uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
 
         vm.expectEmit(true, true, true, true, address(miner));
 
@@ -280,15 +400,26 @@ contract MinerETHTest is Test {
 
         uint256 minerTotalSupplyAfter = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
+        uint256 principalWithSlippage = minerTotalSupplyAfter - COMET_SLIPPAGE;
 
         // Invariant.
         assertEq(tokenBalanceBefore + amount, miner.balanceOf(address(this)));
-        assertEq(minerTotalSupply + amount, minerTotalSupplyAfter);
+        assertEq(minerTotalSupplyBefore + amount, minerTotalSupplyAfter);
+        assertLt(0, minerTotalSupplyAfter);
+        assertLt(0, minerSharesBalance);
+        assertLt(0, principalWithSlippage);
+        assertLt(0, estimatedRedepositShares);
+        assertLt(0, estimatedRewards);
 
         // Estimates.
         assertLe(
-            minerTotalSupplyAfter,
+            principalWithSlippage,
             BRR_ETH.convertToAssets(minerSharesBalance)
+        );
+        assertLe(estimatedRedepositShares + newShares, minerSharesBalance);
+        assertLe(
+            estimatedRewards + dynamicRewardsBalance,
+            ELON.balanceOf(dynamicRewards)
         );
     }
 
@@ -296,7 +427,7 @@ contract MinerETHTest is Test {
                             withdraw
     //////////////////////////////////////////////////////////////*/
 
-    function testCannotWithrawInvalidAmount() external {
+    function testCannotWithdrawInvalidAmount() external {
         uint256 amount = 0;
 
         vm.expectRevert(MinerETH.InvalidAmount.selector);
@@ -308,10 +439,26 @@ contract MinerETHTest is Test {
         uint256 amount = 1e18;
 
         miner.deposit{value: amount}("");
-        skip(60);
+
+        skip(1);
+
+        BRR_ETH.harvest();
 
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
+        (
+            uint256 estimatedRedepositShares,
+            ,
+            uint256 estimatedRewards,
+            ,
+
+        ) = _getEstimates();
+        uint256 removedShares = BRR_ETH.convertToShares(
+            amount + COMET_SLIPPAGE
+        );
+        uint256 rewardsAccruedBefore = rewardsDistributor.rewardsAccrued(
+            address(this)
+        );
 
         vm.expectEmit(true, true, true, true, address(miner));
 
@@ -321,27 +468,56 @@ contract MinerETHTest is Test {
 
         uint256 minerTotalSupplyAfter = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
+        uint256 principalWithSlippage = minerTotalSupplyAfter - COMET_SLIPPAGE;
+        uint256 rewardsAccruedAfter = rewardsDistributor.rewardsAccrued(
+            address(this)
+        );
 
         // Invariant.
         assertEq(tokenBalanceBefore - amount, miner.balanceOf(address(this)));
         assertEq(minerTotalSupply - amount, minerTotalSupplyAfter);
+        assertLt(0, minerTotalSupplyAfter);
+        assertLt(0, minerSharesBalance);
+        assertLt(0, principalWithSlippage);
+        assertLt(0, estimatedRedepositShares);
+        assertLt(0, estimatedRewards);
 
         // Estimates.
         assertLe(
-            minerTotalSupplyAfter,
+            principalWithSlippage,
             BRR_ETH.convertToAssets(minerSharesBalance)
         );
+        assertLe(estimatedRedepositShares - removedShares, minerSharesBalance);
+        assertLe(estimatedRewards + rewardsAccruedBefore, rewardsAccruedAfter);
     }
 
-    function testWithdrawFuzz(uint256 amount) external {
-        amount = bound(amount, 1e6, 1_000 ether);
+    function testWithdrawFuzz(uint256 amount, uint256 skipSeconds) external {
+        amount = bound(amount, 1e2, 1_000 ether);
+        skipSeconds = bound(skipSeconds, 1, 365 days);
 
         deal(address(this), amount);
+
         miner.deposit{value: amount}("");
-        skip(60);
+
+        skip(skipSeconds);
+
+        BRR_ETH.harvest();
 
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
+        (
+            uint256 estimatedRedepositShares,
+            ,
+            uint256 estimatedRewards,
+            ,
+
+        ) = _getEstimates();
+        uint256 removedShares = BRR_ETH.convertToShares(
+            amount + COMET_SLIPPAGE
+        );
+        uint256 rewardsAccruedBefore = rewardsDistributor.rewardsAccrued(
+            address(this)
+        );
 
         vm.expectEmit(true, true, true, true, address(miner));
 
@@ -351,32 +527,62 @@ contract MinerETHTest is Test {
 
         uint256 minerTotalSupplyAfter = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
+        uint256 principalWithSlippage = minerTotalSupplyAfter - COMET_SLIPPAGE;
+        uint256 rewardsAccruedAfter = rewardsDistributor.rewardsAccrued(
+            address(this)
+        );
 
         // Invariant.
         assertEq(tokenBalanceBefore - amount, miner.balanceOf(address(this)));
         assertEq(minerTotalSupply - amount, minerTotalSupplyAfter);
+        assertLt(0, minerTotalSupplyAfter);
+        assertLt(0, minerSharesBalance);
+        assertLt(0, principalWithSlippage);
+        assertLt(0, estimatedRedepositShares);
+        assertLt(0, estimatedRewards);
 
         // Estimates.
         assertLe(
-            minerTotalSupplyAfter,
+            principalWithSlippage,
             BRR_ETH.convertToAssets(minerSharesBalance)
         );
+        assertLe(estimatedRedepositShares - removedShares, minerSharesBalance);
+        assertLe(estimatedRewards + rewardsAccruedBefore, rewardsAccruedAfter);
     }
 
     function testWithdrawPartialFuzz(
         uint256 amount,
+        uint256 skipSeconds,
         uint256 withdrawalDivisor
     ) external {
         amount = bound(amount, 1e3, 1_000 ether);
+        skipSeconds = bound(skipSeconds, 1, 365 days);
         withdrawalDivisor = bound(withdrawalDivisor, 1, type(uint8).max);
 
         deal(address(this), amount);
+
         miner.deposit{value: amount}("");
-        skip(60);
+
+        skip(skipSeconds);
+
+        BRR_ETH.harvest();
 
         uint256 withdrawalAmount = amount / withdrawalDivisor;
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
+        (
+            uint256 estimatedRedepositShares,
+            ,
+            uint256 estimatedRewards,
+            ,
+
+        ) = _getEstimates();
+        uint256 removedShares = BRR_ETH.convertToShares(
+            amount + COMET_SLIPPAGE
+        );
+        uint256 rewardsAccruedBefore = rewardsDistributor.rewardsAccrued(
+            address(this)
+        );
 
         vm.expectEmit(true, true, true, true, address(miner));
 
@@ -386,6 +592,10 @@ contract MinerETHTest is Test {
 
         uint256 minerTotalSupplyAfter = miner.totalSupply();
         uint256 minerSharesBalance = BRR_ETH.balanceOf(address(miner));
+        uint256 principalWithSlippage = minerTotalSupplyAfter - COMET_SLIPPAGE;
+        uint256 rewardsAccruedAfter = rewardsDistributor.rewardsAccrued(
+            address(this)
+        );
 
         // Invariant.
         assertEq(
@@ -393,12 +603,19 @@ contract MinerETHTest is Test {
             miner.balanceOf(address(this))
         );
         assertEq(minerTotalSupply - withdrawalAmount, minerTotalSupplyAfter);
+        assertLt(0, minerTotalSupplyAfter);
+        assertLt(0, minerSharesBalance);
+        assertLt(0, principalWithSlippage);
+        assertLt(0, estimatedRedepositShares);
+        assertLt(0, estimatedRewards);
 
         // Estimates.
         assertLe(
-            minerTotalSupplyAfter,
+            principalWithSlippage,
             BRR_ETH.convertToAssets(minerSharesBalance)
         );
+        assertLe(estimatedRedepositShares - removedShares, minerSharesBalance);
+        assertLe(estimatedRewards + rewardsAccruedBefore, rewardsAccruedAfter);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -410,15 +627,15 @@ contract MinerETHTest is Test {
 
         miner.deposit{value: amount}("");
 
-        skip(5);
+        skip(1);
+
+        miner.mine();
 
         uint256 rewardsAccrued = rewardsDistributor.rewardsAccrued(
             address(this)
         );
         uint256 elonBalanceBefore = ELON.balanceOf(address(this));
-        uint256 dynamicRewardsElonBalanceBefore = ELON.balanceOf(
-            dynamicRewards
-        );
+        uint256 dynamicRewardsBalanceBefore = ELON.balanceOf(dynamicRewards);
 
         vm.expectEmit(true, true, true, false, address(miner));
 
@@ -432,27 +649,32 @@ contract MinerETHTest is Test {
         assertEq(0, rewardsAccruedAfter);
         assertEq(elonBalanceBefore + rewards, ELON.balanceOf(address(this)));
         assertLe(
-            dynamicRewardsElonBalanceBefore - rewards,
+            dynamicRewardsBalanceBefore - rewards,
             ELON.balanceOf(dynamicRewards)
         );
         assertLe(rewardsAccrued, rewards);
     }
 
-    function testClaimRewardsFuzz(uint256 amount) external {
-        amount = bound(amount, 1e6, 1_000 ether);
+    function testClaimRewardsFuzz(
+        uint256 amount,
+        uint256 skipSeconds
+    ) external {
+        amount = bound(amount, 1e3, 1_000 ether);
+        skipSeconds = bound(skipSeconds, 1, 365 days);
 
         deal(address(this), amount);
+
         miner.deposit{value: amount}("");
 
-        skip(5);
+        skip(skipSeconds);
+
+        miner.mine();
 
         uint256 rewardsAccrued = rewardsDistributor.rewardsAccrued(
             address(this)
         );
         uint256 elonBalanceBefore = ELON.balanceOf(address(this));
-        uint256 dynamicRewardsElonBalanceBefore = ELON.balanceOf(
-            dynamicRewards
-        );
+        uint256 dynamicRewardsBalanceBefore = ELON.balanceOf(dynamicRewards);
 
         vm.expectEmit(true, true, true, false, address(miner));
 
@@ -466,7 +688,7 @@ contract MinerETHTest is Test {
         assertEq(0, rewardsAccruedAfter);
         assertEq(elonBalanceBefore + rewards, ELON.balanceOf(address(this)));
         assertLe(
-            dynamicRewardsElonBalanceBefore - rewards,
+            dynamicRewardsBalanceBefore - rewards,
             ELON.balanceOf(dynamicRewards)
         );
         assertLe(rewardsAccrued, rewards);
