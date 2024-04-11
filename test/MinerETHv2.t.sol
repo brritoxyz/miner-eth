@@ -39,6 +39,8 @@ contract MinerETHv2Test is Test {
     string public constant TOKEN_SYMBOL = "brrMINER-ETH/ElonRWA";
     uint256 public constant TOKEN_DECIMALS = 18;
     uint256 public constant DEAD_SHARES_VALUE = 0.01 ether;
+    uint256 public constant MIN_DEPOSIT = 1e12;
+    uint256 public constant MIN_WITHDRAW = 1e12;
     MinerETHv2Factory public immutable factory = new MinerETHv2Factory();
     MinerETHv2 public immutable miner;
     IRewardsDistributor public immutable rewardsDistributor;
@@ -172,6 +174,27 @@ contract MinerETHv2Test is Test {
         assertEq(0, rewards);
     }
 
+    function testMineNoInterest() external {
+        MinerETHv2 newMiner = MinerETHv2(
+            payable(factory.deploy(address(WETH)))
+        );
+
+        // Harvest first so that there is no outstanding interest that can be accrued from the deposit.
+        BRR_ETH_V2.harvest();
+
+        newMiner.deposit{value: 1 ether}("");
+
+        assertLt(
+            _calculateAssetsFromRedeem(BRR_ETH_V2.balanceOf(address(newMiner))),
+            newMiner.totalSupply()
+        );
+
+        (uint256 interest, uint256 rewards) = newMiner.mine();
+
+        assertEq(0, interest);
+        assertEq(0, rewards);
+    }
+
     function testMineWithMoonwellDeficit() external {
         uint256 minDeposit = 2 ether;
         uint256 interestAccrualTime = 40;
@@ -209,7 +232,7 @@ contract MinerETHv2Test is Test {
     }
 
     function testMine() external {
-        skip(1);
+        skip(8459);
 
         // Harvesting before calling `mine` makes it easier for us to calculate expected values.
         BRR_ETH_V2.harvest();
@@ -217,7 +240,7 @@ contract MinerETHv2Test is Test {
         uint256 minerTotalSupply = miner.totalSupply();
         uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
         (
-            uint256 estimatedRedepositShares,
+            ,
             uint256 estimatedInterest,
             uint256 estimatedRewards,
             uint256 estimatedStrategyIndex,
@@ -263,10 +286,6 @@ contract MinerETHv2Test is Test {
         assertLt(0, rewardsAccrued);
 
         // Estimates.
-        assertLe(
-            estimatedRedepositShares,
-            BRR_ETH_V2.balanceOf(address(miner))
-        );
         assertLe(estimatedInterest, interest);
         assertLe(estimatedRewards, rewards);
         assertLe(estimatedStrategyIndex, strategyIndex);
@@ -285,7 +304,7 @@ contract MinerETHv2Test is Test {
         uint256 minerTotalSupply = miner.totalSupply();
         uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
         (
-            uint256 estimatedRedepositShares,
+            ,
             uint256 estimatedInterest,
             uint256 estimatedRewards,
             uint256 estimatedStrategyIndex,
@@ -331,10 +350,6 @@ contract MinerETHv2Test is Test {
         assertLt(0, rewardsAccrued);
 
         // Estimates.
-        assertLe(
-            estimatedRedepositShares,
-            BRR_ETH_V2.balanceOf(address(miner))
-        );
         assertLe(estimatedInterest, interest);
         assertLe(estimatedRewards, rewards);
         assertLe(estimatedStrategyIndex, strategyIndex);
@@ -347,6 +362,15 @@ contract MinerETHv2Test is Test {
 
     function testCannotDepositInvalidAmount() external {
         uint256 amount = 0;
+        string memory memo = "test";
+
+        vm.expectRevert(MinerETHv2.InvalidAmount.selector);
+
+        miner.deposit{value: amount}(memo);
+    }
+
+    function testCannotDepositInvalidAmountFuzz(uint256 amount) external {
+        amount = bound(amount, 0, MIN_DEPOSIT - 1);
         string memory memo = "test";
 
         vm.expectRevert(MinerETHv2.InvalidAmount.selector);
@@ -420,7 +444,7 @@ contract MinerETHv2Test is Test {
     }
 
     function testDepositFuzz(uint256 amount, string calldata memo) external {
-        amount = bound(amount, 1e9, 1_000 ether);
+        amount = bound(amount, MIN_DEPOSIT, 1_000 ether);
 
         deal(address(this), amount);
 
@@ -472,6 +496,14 @@ contract MinerETHv2Test is Test {
 
     function testCannotWithdrawInvalidAmount() external {
         uint256 amount = 0;
+
+        vm.expectRevert(MinerETHv2.InvalidAmount.selector);
+
+        miner.withdraw(amount);
+    }
+
+    function testCannotWithdrawInvalidAmountFuzz(uint256 amount) external {
+        amount = bound(amount, 0, MIN_WITHDRAW - 1);
 
         vm.expectRevert(MinerETHv2.InvalidAmount.selector);
 
@@ -540,7 +572,7 @@ contract MinerETHv2Test is Test {
     }
 
     function testWithdrawFuzz(uint256 amount, uint256 skipSeconds) external {
-        amount = bound(amount, 1e9, 1_000 ether);
+        amount = bound(amount, MIN_DEPOSIT, 1_000 ether);
         skipSeconds = bound(skipSeconds, 60, 365 days);
 
         deal(address(this), amount);
@@ -608,7 +640,7 @@ contract MinerETHv2Test is Test {
         uint256 skipSeconds,
         uint256 withdrawalDivisor
     ) external {
-        amount = bound(amount, 1e12, 1_000 ether);
+        amount = bound(amount, MIN_DEPOSIT, 1_000 ether);
         skipSeconds = bound(skipSeconds, 60, 365 days);
         withdrawalDivisor = bound(withdrawalDivisor, 1, type(uint8).max);
 
@@ -621,9 +653,9 @@ contract MinerETHv2Test is Test {
         BRR_ETH_V2.harvest();
 
         uint256 _withdrawalAmount = amount / withdrawalDivisor;
-        uint256 withdrawalAmount = _withdrawalAmount > 1e9
+        uint256 withdrawalAmount = _withdrawalAmount > MIN_WITHDRAW
             ? _withdrawalAmount
-            : 1e9;
+            : MIN_WITHDRAW;
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
         (

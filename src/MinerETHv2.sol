@@ -26,6 +26,8 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
     address private constant _SWAP_REFERRER = address(0);
     uint256 private constant _MIN_SHARES_MINTED = 1;
     uint256 private constant _MIN_ASSETS_REDEEMED = 1;
+    uint256 private constant _MIN_DEPOSIT = 1e12;
+    uint256 private constant _MIN_WITHDRAW = 1e12;
     string private constant _TOKEN_NAME_PREFIX = "Brrito Miner-ETH/";
     string private constant _TOKEN_SYMBOL_PREFIX = "brrMINER-ETH/";
     address private constant _MWETH =
@@ -151,7 +153,6 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
 
         uint256 sharesBalance = _BRR_ETH_V2.balanceOf(address(this));
 
-        // Only convert interest into rewards if it is non-zero.
         if (
             _totalSupply <
             _MOONWELL_HELPER.calculateRedeem(
@@ -212,7 +213,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
      * @param  memo  string  Arbitrary data for offchain tracking purposes.
      */
     function deposit(string calldata memo) external payable nonReentrant {
-        if (msg.value == 0) revert InvalidAmount();
+        if (msg.value < _MIN_DEPOSIT) revert InvalidAmount();
 
         _WETH.deposit{value: msg.value}();
         _mine();
@@ -231,7 +232,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
      * @param  amount  uint256  Token amount.
      */
     function withdraw(uint256 amount) external nonReentrant {
-        if (amount == 0) revert InvalidAmount();
+        if (amount < _MIN_WITHDRAW) revert InvalidAmount();
 
         _mine();
         _burn(msg.sender, amount);
