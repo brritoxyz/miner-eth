@@ -25,7 +25,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
     address private constant _SWAP_REFERRER = address(0);
     uint256 private constant _DEPOSIT_SLIPPAGE = 1;
     uint256 private constant _REDEEM_SLIPPAGE = 1;
-    string private constant _TOKEN_NAME_PREFIX = "Brrito MinerV2-ETH/";
+    string private constant _TOKEN_NAME_PREFIX = "Brrito Miner V2-ETH/";
     string private constant _TOKEN_SYMBOL_PREFIX = "brrMINERv2-ETH/";
     IBrrETHv2 private constant _BRR_ETH_V2 =
         IBrrETHv2(0xD729A94d6366a4fEac4A6869C8b3573cEe4701A9);
@@ -148,8 +148,8 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
             _REDEEM_SLIPPAGE
         );
 
-        // Comet rounding may lead to the redeemed ETH being less than the total supply,
-        // but the interest accrued per block should more than make up for it.
+        // Loss from mWETH minting does not scale lineraly with the total deposit amount,
+        // and the interest and rewards accrued should make a sustained attack infeasible.
         if (address(this).balance < _totalSupply) {
             _BRR_ETH_V2.deposit{value: address(this).balance}(
                 address(this),
