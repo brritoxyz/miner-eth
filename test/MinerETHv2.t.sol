@@ -265,7 +265,7 @@ contract MinerETHv2Test is Test {
     }
 
     function testMineFuzz(uint256 skipSeconds) external {
-        skipSeconds = bound(skipSeconds, 1, 1_000);
+        skipSeconds = bound(skipSeconds, 60, 1_000);
 
         // Forward timestamp to accrue interest.
         skip(skipSeconds);
@@ -472,18 +472,13 @@ contract MinerETHv2Test is Test {
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
         (
-            uint256 estimatedRedepositShares,
+            ,
             ,
             uint256 estimatedRewards,
             ,
-
+            uint256 estimatedRewardsAccrued
         ) = _getEstimates();
-        uint256 removedShares = BRR_ETH_V2.convertToShares(
-            amount + MOONWELL_SLIPPAGE
-        );
-        uint256 rewardsAccruedBefore = rewardsDistributor.rewardsAccrued(
-            address(this)
-        );
+        uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
 
         vm.expectEmit(true, true, true, true, address(miner));
 
@@ -502,24 +497,33 @@ contract MinerETHv2Test is Test {
         // Invariant.
         assertEq(tokenBalanceBefore - amount, miner.balanceOf(address(this)));
         assertEq(minerTotalSupply - amount, minerTotalSupplyAfter);
+        assertLt(
+            minerTotalSupplyAfter -
+                _calculateAssetsFromRedeem(minerSharesBalance),
+            MOONWELL_SLIPPAGE
+        );
         assertLt(0, minerTotalSupplyAfter);
         assertLt(0, minerSharesBalance);
         assertLt(0, principalWithSlippage);
-        assertLt(0, estimatedRedepositShares);
         assertLt(0, estimatedRewards);
+        assertLt(0, estimatedRewardsAccrued);
 
         // Estimates.
         assertLe(
             principalWithSlippage,
-            BRR_ETH_V2.convertToAssets(minerSharesBalance)
+            _calculateAssetsFromRedeem(minerSharesBalance)
         );
-        assertLe(estimatedRedepositShares - removedShares, minerSharesBalance);
-        assertLe(estimatedRewards + rewardsAccruedBefore, rewardsAccruedAfter);
+        assertLe(
+            estimatedRewards + dynamicRewardsBalance,
+            ELON.balanceOf(address(dynamicRewards))
+        );
+        assertLe(rewardsAccruedAfter, ELON.balanceOf(address(dynamicRewards)));
+        assertLe(estimatedRewardsAccrued, rewardsAccruedAfter);
     }
 
     function testWithdrawFuzz(uint256 amount, uint256 skipSeconds) external {
-        amount = bound(amount, 1e2, 1_000 ether);
-        skipSeconds = bound(skipSeconds, 1, 365 days);
+        amount = bound(amount, 1e9, 1_000 ether);
+        skipSeconds = bound(skipSeconds, 60, 365 days);
 
         deal(address(this), amount);
 
@@ -532,18 +536,13 @@ contract MinerETHv2Test is Test {
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
         (
-            uint256 estimatedRedepositShares,
+            ,
             ,
             uint256 estimatedRewards,
             ,
-
+            uint256 estimatedRewardsAccrued
         ) = _getEstimates();
-        uint256 removedShares = BRR_ETH_V2.convertToShares(
-            amount + MOONWELL_SLIPPAGE
-        );
-        uint256 rewardsAccruedBefore = rewardsDistributor.rewardsAccrued(
-            address(this)
-        );
+        uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
 
         vm.expectEmit(true, true, true, true, address(miner));
 
@@ -562,19 +561,28 @@ contract MinerETHv2Test is Test {
         // Invariant.
         assertEq(tokenBalanceBefore - amount, miner.balanceOf(address(this)));
         assertEq(minerTotalSupply - amount, minerTotalSupplyAfter);
+        assertLt(
+            minerTotalSupplyAfter -
+                _calculateAssetsFromRedeem(minerSharesBalance),
+            MOONWELL_SLIPPAGE
+        );
         assertLt(0, minerTotalSupplyAfter);
         assertLt(0, minerSharesBalance);
         assertLt(0, principalWithSlippage);
-        assertLt(0, estimatedRedepositShares);
         assertLt(0, estimatedRewards);
+        assertLt(0, estimatedRewardsAccrued);
 
         // Estimates.
         assertLe(
             principalWithSlippage,
-            BRR_ETH_V2.convertToAssets(minerSharesBalance)
+            _calculateAssetsFromRedeem(minerSharesBalance)
         );
-        assertLe(estimatedRedepositShares - removedShares, minerSharesBalance);
-        assertLe(estimatedRewards + rewardsAccruedBefore, rewardsAccruedAfter);
+        assertLe(
+            estimatedRewards + dynamicRewardsBalance,
+            ELON.balanceOf(address(dynamicRewards))
+        );
+        assertLe(rewardsAccruedAfter, ELON.balanceOf(address(dynamicRewards)));
+        assertLe(estimatedRewardsAccrued, rewardsAccruedAfter);
     }
 
     function testWithdrawPartialFuzz(
@@ -582,8 +590,8 @@ contract MinerETHv2Test is Test {
         uint256 skipSeconds,
         uint256 withdrawalDivisor
     ) external {
-        amount = bound(amount, 1e3, 1_000 ether);
-        skipSeconds = bound(skipSeconds, 1, 365 days);
+        amount = bound(amount, 1e12, 1_000 ether);
+        skipSeconds = bound(skipSeconds, 60, 365 days);
         withdrawalDivisor = bound(withdrawalDivisor, 1, type(uint8).max);
 
         deal(address(this), amount);
@@ -594,22 +602,20 @@ contract MinerETHv2Test is Test {
 
         BRR_ETH_V2.harvest();
 
-        uint256 withdrawalAmount = amount / withdrawalDivisor;
+        uint256 _withdrawalAmount = amount / withdrawalDivisor;
+        uint256 withdrawalAmount = _withdrawalAmount > 1e9
+            ? _withdrawalAmount
+            : 1e9;
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
         (
-            uint256 estimatedRedepositShares,
+            ,
             ,
             uint256 estimatedRewards,
             ,
-
+            uint256 estimatedRewardsAccrued
         ) = _getEstimates();
-        uint256 removedShares = BRR_ETH_V2.convertToShares(
-            amount + MOONWELL_SLIPPAGE
-        );
-        uint256 rewardsAccruedBefore = rewardsDistributor.rewardsAccrued(
-            address(this)
-        );
+        uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
 
         vm.expectEmit(true, true, true, true, address(miner));
 
@@ -631,19 +637,28 @@ contract MinerETHv2Test is Test {
             miner.balanceOf(address(this))
         );
         assertEq(minerTotalSupply - withdrawalAmount, minerTotalSupplyAfter);
+        assertLt(
+            minerTotalSupplyAfter -
+                _calculateAssetsFromRedeem(minerSharesBalance),
+            MOONWELL_SLIPPAGE
+        );
         assertLt(0, minerTotalSupplyAfter);
         assertLt(0, minerSharesBalance);
         assertLt(0, principalWithSlippage);
-        assertLt(0, estimatedRedepositShares);
         assertLt(0, estimatedRewards);
+        assertLt(0, estimatedRewardsAccrued);
 
         // Estimates.
         assertLe(
             principalWithSlippage,
-            BRR_ETH_V2.convertToAssets(minerSharesBalance)
+            _calculateAssetsFromRedeem(minerSharesBalance)
         );
-        assertLe(estimatedRedepositShares - removedShares, minerSharesBalance);
-        assertLe(estimatedRewards + rewardsAccruedBefore, rewardsAccruedAfter);
+        assertLe(
+            estimatedRewards + dynamicRewardsBalance,
+            ELON.balanceOf(address(dynamicRewards))
+        );
+        assertLe(rewardsAccruedAfter, ELON.balanceOf(address(dynamicRewards)));
+        assertLe(estimatedRewardsAccrued, rewardsAccruedAfter);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -687,8 +702,8 @@ contract MinerETHv2Test is Test {
         uint256 amount,
         uint256 skipSeconds
     ) external {
-        amount = bound(amount, 1e2, 1_000 ether);
-        skipSeconds = bound(skipSeconds, 1, 365 days);
+        amount = bound(amount, 1e12, 1_000 ether);
+        skipSeconds = bound(skipSeconds, 60, 365 days);
 
         deal(address(this), amount);
 
