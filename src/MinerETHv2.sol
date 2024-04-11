@@ -148,7 +148,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
             _REDEEM_SLIPPAGE
         );
 
-        // Loss from mWETH minting does not scale lineraly with the total deposit amount,
+        // Loss from mWETH minting does not scale linearly with the total deposit amount,
         // and the interest and rewards accrued should make a sustained attack infeasible.
         if (address(this).balance < _totalSupply) {
             _BRR_ETH_V2.deposit{value: address(this).balance}(

@@ -171,7 +171,8 @@ contract MinerETHTest is Test {
 
         // The interest accrued from the initial deposit, in a single block, will exceed the rounding losses
         // resulting from 500 iterations of calling `mine`.
-        assertLe(assetsAfter, assetsAfterInterestAccrual);
+        assertLe(assetsBefore, assetsAfterInterestAccrual);
+        assertLe(miner.totalSupply(), assetsAfterInterestAccrual);
     }
 
     function testMine() external {

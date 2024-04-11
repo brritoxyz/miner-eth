@@ -172,38 +172,44 @@ contract MinerETHv2Test is Test {
         assertEq(0, rewards);
     }
 
-    function testMineWithCometDeficit() external {
-        miner.mine();
+    function testMineWithMoonwellDeficit() external {
+        uint256 minDeposit = 2 ether;
+        uint256 interestAccrualTime = 40;
+
+        miner.deposit{value: minDeposit}("");
 
         uint256 sharesBefore = BRR_ETH_V2.balanceOf(address(miner));
-        uint256 assetsBefore = BRR_ETH_V2.convertToAssets(sharesBefore);
+        uint256 assetsBefore = _calculateAssetsFromRedeem(sharesBefore);
 
         // Calling mine multiple times in the same block will lead to less shares, less assets.
-        // As of this writing, 500 iterations exceeds the 60M block gas limit.
-        for (uint256 i = 0; i < 500; ++i) {
+        // As of this writing, 150 iterations exceeds the 60M block gas limit by a large margin.
+        for (uint256 i = 0; i < 150; ++i) {
             miner.mine();
         }
 
         uint256 sharesAfter = BRR_ETH_V2.balanceOf(address(miner));
-        uint256 assetsAfter = BRR_ETH_V2.convertToAssets(sharesAfter);
+        uint256 assetsAfter = _calculateAssetsFromRedeem(sharesAfter);
 
         assertLe(sharesAfter, sharesBefore);
         assertLe(assetsAfter, assetsBefore);
+        assertLe(assetsAfter, miner.totalSupply());
 
-        skip(1);
+        skip(interestAccrualTime);
 
-        uint256 assetsAfterInterestAccrual = BRR_ETH_V2.convertToAssets(
+        BRR_ETH_V2.harvest();
+
+        uint256 assetsAfterInterestAccrual = _calculateAssetsFromRedeem(
             BRR_ETH_V2.balanceOf(address(miner))
         );
 
-        // The interest accrued from the initial deposit, in a single block, will exceed the rounding losses
-        // resulting from 500 iterations of calling `mine`.
-        assertLe(assetsAfter, assetsAfterInterestAccrual);
+        // The interest accrued from `minDeposit` will exceed the losses resulting from
+        // 500 iterations of calling `mine` after `accrualTime` elapses.
+        assertLe(assetsBefore, assetsAfterInterestAccrual);
+        assertLe(miner.totalSupply(), assetsAfterInterestAccrual);
     }
 
     function testMine() external {
-        // Forward a block to accrue interest.
-        vm.roll(block.number + 1);
+        skip(1);
 
         // Harvesting before calling `mine` makes it easier for us to calculate expected values.
         BRR_ETH_V2.harvest();
@@ -231,6 +237,13 @@ contract MinerETHv2Test is Test {
         assertEq(
             dynamicRewardsBalance + rewards,
             ELON.balanceOf(dynamicRewards)
+        );
+        assertLt(
+            miner.totalSupply() -
+                _calculateAssetsFromRedeem(
+                    BRR_ETH_V2.balanceOf(address(miner))
+                ),
+            MOONWELL_SLIPPAGE
         );
         assertEq(lastUpdatedTimestamp, block.timestamp);
         assertEq(0, address(WETH).balanceOf(address(miner)));
@@ -283,6 +296,13 @@ contract MinerETHv2Test is Test {
         assertEq(
             dynamicRewardsBalance + rewards,
             ELON.balanceOf(dynamicRewards)
+        );
+        assertLt(
+            miner.totalSupply() -
+                _calculateAssetsFromRedeem(
+                    BRR_ETH_V2.balanceOf(address(miner))
+                ),
+            MOONWELL_SLIPPAGE
         );
         assertEq(lastUpdatedTimestamp, block.timestamp);
         assertEq(0, address(WETH).balanceOf(address(miner)));
@@ -390,14 +410,7 @@ contract MinerETHv2Test is Test {
 
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupplyBefore = miner.totalSupply();
-        (
-            uint256 estimatedRedepositShares,
-            ,
-            uint256 estimatedRewards,
-            ,
-
-        ) = _getEstimates();
-        uint256 newShares = _calculateSharesFromDeposit(amount);
+        (, , uint256 estimatedRewards, , ) = _getEstimates();
         uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
 
         vm.expectEmit(true, true, true, true, address(miner));
@@ -422,7 +435,6 @@ contract MinerETHv2Test is Test {
         assertLt(0, minerTotalSupplyAfter);
         assertLt(0, minerSharesBalance);
         assertLt(0, principalWithSlippage);
-        assertLt(0, estimatedRedepositShares);
         assertLt(0, estimatedRewards);
 
         // Estimates.
