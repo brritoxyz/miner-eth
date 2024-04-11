@@ -11,6 +11,7 @@ import {IBrrETHv2} from "src/interfaces/IBrrETHv2.sol";
 import {IBrrETHv2RedeemHelper} from "src/interfaces/IBrrETHv2RedeemHelper.sol";
 import {IRewardsDistributor} from "src/interfaces/IRewardsDistributor.sol";
 import {IRouter} from "src/interfaces/IRouter.sol";
+import {IMoonwellHelper} from "src/interfaces/IMoonwellHelper.sol";
 import {IWETH} from "src/interfaces/IWETH.sol";
 
 /**
@@ -23,10 +24,12 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
     using SafeTransferLib for address;
 
     address private constant _SWAP_REFERRER = address(0);
-    uint256 private constant _DEPOSIT_MIN_SHARES = 1;
-    uint256 private constant _REDEEM_MIN_ASSETS = 1;
+    uint256 private constant _MIN_SHARES_MINTED = 1;
+    uint256 private constant _MIN_ASSETS_REDEEMED = 1;
     string private constant _TOKEN_NAME_PREFIX = "Brrito Miner-ETH/";
     string private constant _TOKEN_SYMBOL_PREFIX = "brrMINER-ETH/";
+    address private constant _MWETH =
+        0x628ff693426583D9a7FB391E54366292F509D457;
     IBrrETHv2 private constant _BRR_ETH_V2 =
         IBrrETHv2(0xD729A94d6366a4fEac4A6869C8b3573cEe4701A9);
     IBrrETHv2RedeemHelper private constant _BRR_ETH_V2_HELPER =
@@ -35,6 +38,8 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         IRouter(0xe88483B5901FA3537355C4324ccF92a8d4155260);
     IWETH private constant _WETH =
         IWETH(0x4200000000000000000000000000000000000006);
+    IMoonwellHelper private constant _MOONWELL_HELPER =
+        IMoonwellHelper(0x7ea675e183e753d9e5f2b833b9c014727A4Ca57A);
     string private _name;
     string private _symbol;
     bytes32 private _pair;
@@ -59,6 +64,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
 
     error InvalidAddress();
     error InvalidAmount();
+    error InsufficientInterest();
 
     /**
      * @notice There should never be ETH sitting in this contract, but in the event that there
@@ -142,54 +148,54 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         if (_totalSupply == 0) return (0, 0);
 
         _BRR_ETH_V2.harvest();
-        _BRR_ETH_V2_HELPER.redeem(
-            _BRR_ETH_V2.balanceOf(address(this)),
-            address(this),
-            _REDEEM_MIN_ASSETS
-        );
 
-        // Loss from mWETH minting does not scale linearly with the total deposit amount,
-        // and the interest and rewards accrued should make a sustained attack infeasible.
-        if (address(this).balance < _totalSupply) {
-            _BRR_ETH_V2.deposit{value: address(this).balance}(
+        uint256 sharesBalance = _BRR_ETH_V2.balanceOf(address(this));
+
+        // Only convert interest into rewards if it is non-zero.
+        if (
+            _totalSupply <
+            _MOONWELL_HELPER.calculateRedeem(
+                _MWETH,
+                _BRR_ETH_V2.convertToAssets(sharesBalance)
+            )
+        ) {
+            _BRR_ETH_V2_HELPER.redeem(
+                sharesBalance,
                 address(this),
-                _DEPOSIT_MIN_SHARES
+                _totalSupply
             );
-        } else {
             _BRR_ETH_V2.deposit{value: _totalSupply}(
                 address(this),
-                _DEPOSIT_MIN_SHARES
+                _MIN_SHARES_MINTED
             );
 
             interest = address(this).balance;
 
-            if (interest != 0) {
-                _WETH.deposit{value: interest}();
+            _WETH.deposit{value: interest}();
 
-                (uint256 index, uint256 quote) = _ROUTER.getSwapOutput(
-                    _pair,
-                    interest
+            (uint256 index, uint256 quote) = _ROUTER.getSwapOutput(
+                _pair,
+                interest
+            );
+
+            if (quote != 0) {
+                rewards = _ROUTER.swap(
+                    address(_WETH),
+                    rewardToken,
+                    interest,
+                    quote,
+                    index,
+                    _SWAP_REFERRER
                 );
 
-                if (quote != 0) {
-                    rewards = _ROUTER.swap(
-                        address(_WETH),
-                        rewardToken,
-                        interest,
-                        quote,
-                        index,
-                        _SWAP_REFERRER
-                    );
-
-                    rewardToken.safeTransfer(rewardsStore, rewards);
-                    rewardsDistributor.accrue(
-                        SolmateERC20(address(this)),
-                        msg.sender
-                    );
-                } else {
-                    // Unwrap ETH, which will roll over to the next `mine`.
-                    _WETH.withdraw(interest);
-                }
+                rewardToken.safeTransfer(rewardsStore, rewards);
+                rewardsDistributor.accrue(
+                    SolmateERC20(address(this)),
+                    msg.sender
+                );
+            } else {
+                // Unwrap ETH, which will roll over to the next `mine` or redeposit.
+                _WETH.withdraw(interest);
             }
         }
 
@@ -213,7 +219,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         _WETH.withdraw(msg.value);
         _BRR_ETH_V2.deposit{value: msg.value}(
             address(this),
-            _DEPOSIT_MIN_SHARES
+            _MIN_SHARES_MINTED
         );
         _mint(msg.sender, msg.value);
 
@@ -232,7 +238,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         _BRR_ETH_V2_HELPER.redeem(
             _BRR_ETH_V2.balanceOf(address(this)),
             address(this),
-            _REDEEM_MIN_ASSETS
+            _MIN_ASSETS_REDEEMED
         );
 
         uint256 redepositAmount = address(this).balance - amount;
@@ -240,7 +246,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         if (redepositAmount != 0)
             _BRR_ETH_V2.deposit{value: redepositAmount}(
                 address(this),
-                _DEPOSIT_MIN_SHARES
+                _MIN_SHARES_MINTED
             );
 
         msg.sender.forceSafeTransferETH(amount);

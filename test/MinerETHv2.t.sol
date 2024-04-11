@@ -183,7 +183,7 @@ contract MinerETHv2Test is Test {
 
         // Calling mine multiple times in the same block will lead to less shares, less assets.
         // As of this writing, 150 iterations exceeds the 60M block gas limit by a large margin.
-        for (uint256 i = 0; i < 150; ++i) {
+        for (uint256 i = 0; i < 1000; ++i) {
             miner.mine();
         }
 
@@ -223,6 +223,15 @@ contract MinerETHv2Test is Test {
             uint256 estimatedStrategyIndex,
             uint256 estimatedRewardsAccrued
         ) = _getEstimates();
+
+        vm.expectEmit(true, true, true, true, address(miner));
+
+        emit MinerETHv2.Mine(
+            address(this),
+            estimatedInterest,
+            estimatedRewards
+        );
+
         (uint256 interest, uint256 rewards) = miner.mine();
         (
             uint256 strategyIndex,
@@ -282,6 +291,15 @@ contract MinerETHv2Test is Test {
             uint256 estimatedStrategyIndex,
             uint256 estimatedRewardsAccrued
         ) = _getEstimates();
+
+        vm.expectEmit(true, true, true, true, address(miner));
+
+        emit MinerETHv2.Mine(
+            address(this),
+            estimatedInterest,
+            estimatedRewards
+        );
+
         (uint256 interest, uint256 rewards) = miner.mine();
         (
             uint256 strategyIndex,
