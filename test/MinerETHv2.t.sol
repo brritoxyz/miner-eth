@@ -35,8 +35,8 @@ contract MinerETHv2Test is Test {
     IRouter public constant ROUTER =
         IRouter(0xe88483B5901FA3537355C4324ccF92a8d4155260);
     uint256 public constant MOONWELL_SLIPPAGE = 1e9;
-    string public constant TOKEN_NAME = "Brrito Miner V2-ETH/ElonRWA";
-    string public constant TOKEN_SYMBOL = "brrMINERv2-ETH/ElonRWA";
+    string public constant TOKEN_NAME = "Brrito Miner-ETH/ElonRWA";
+    string public constant TOKEN_SYMBOL = "brrMINER-ETH/ElonRWA";
     uint256 public constant TOKEN_DECIMALS = 18;
     uint256 public constant DEAD_SHARES_VALUE = 0.01 ether;
     MinerETHv2Factory public immutable factory = new MinerETHv2Factory();

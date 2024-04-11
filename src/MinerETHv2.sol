@@ -23,10 +23,10 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
     using SafeTransferLib for address;
 
     address private constant _SWAP_REFERRER = address(0);
-    uint256 private constant _DEPOSIT_SLIPPAGE = 1;
-    uint256 private constant _REDEEM_SLIPPAGE = 1;
-    string private constant _TOKEN_NAME_PREFIX = "Brrito Miner V2-ETH/";
-    string private constant _TOKEN_SYMBOL_PREFIX = "brrMINERv2-ETH/";
+    uint256 private constant _DEPOSIT_MIN_SHARES = 1;
+    uint256 private constant _REDEEM_MIN_ASSETS = 1;
+    string private constant _TOKEN_NAME_PREFIX = "Brrito Miner-ETH/";
+    string private constant _TOKEN_SYMBOL_PREFIX = "brrMINER-ETH/";
     IBrrETHv2 private constant _BRR_ETH_V2 =
         IBrrETHv2(0xD729A94d6366a4fEac4A6869C8b3573cEe4701A9);
     IBrrETHv2RedeemHelper private constant _BRR_ETH_V2_HELPER =
@@ -145,7 +145,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         _BRR_ETH_V2_HELPER.redeem(
             _BRR_ETH_V2.balanceOf(address(this)),
             address(this),
-            _REDEEM_SLIPPAGE
+            _REDEEM_MIN_ASSETS
         );
 
         // Loss from mWETH minting does not scale linearly with the total deposit amount,
@@ -153,12 +153,12 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         if (address(this).balance < _totalSupply) {
             _BRR_ETH_V2.deposit{value: address(this).balance}(
                 address(this),
-                _DEPOSIT_SLIPPAGE
+                _DEPOSIT_MIN_SHARES
             );
         } else {
             _BRR_ETH_V2.deposit{value: _totalSupply}(
                 address(this),
-                _DEPOSIT_SLIPPAGE
+                _DEPOSIT_MIN_SHARES
             );
 
             interest = address(this).balance;
@@ -211,7 +211,10 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         _WETH.deposit{value: msg.value}();
         _mine();
         _WETH.withdraw(msg.value);
-        _BRR_ETH_V2.deposit{value: msg.value}(address(this), _DEPOSIT_SLIPPAGE);
+        _BRR_ETH_V2.deposit{value: msg.value}(
+            address(this),
+            _DEPOSIT_MIN_SHARES
+        );
         _mint(msg.sender, msg.value);
 
         emit Deposit(msg.sender, memo.packOne(), msg.value);
@@ -229,7 +232,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         _BRR_ETH_V2_HELPER.redeem(
             _BRR_ETH_V2.balanceOf(address(this)),
             address(this),
-            _REDEEM_SLIPPAGE
+            _REDEEM_MIN_ASSETS
         );
 
         uint256 redepositAmount = address(this).balance - amount;
@@ -237,7 +240,7 @@ contract MinerETHv2 is ERC20, Initializable, ReentrancyGuard {
         if (redepositAmount != 0)
             _BRR_ETH_V2.deposit{value: redepositAmount}(
                 address(this),
-                _DEPOSIT_SLIPPAGE
+                _DEPOSIT_MIN_SHARES
             );
 
         msg.sender.forceSafeTransferETH(amount);
