@@ -25,6 +25,8 @@ contract RewardsStore {
 
         amount = rewardToken.balanceOf(address(this));
 
+        if (amount == 0) return 0;
+
         rewardToken.safeTransfer(msg.sender, amount);
     }
 }
