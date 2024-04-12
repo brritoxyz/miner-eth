@@ -24,8 +24,6 @@ contract MinerETHv2Test is Test {
 
     IBrrETHv2 public constant BRR_ETH_V2 =
         IBrrETHv2(0xD729A94d6366a4fEac4A6869C8b3573cEe4701A9);
-    address public constant BRR_ETH_V2_HELPER =
-        0xeDB5625634C5Bee920a1054712FDB8F6ae53218e;
     IMoonwellHelper public constant MOONWELL_HELPER =
         IMoonwellHelper(0x7ea675e183e753d9e5f2b833b9c014727A4Ca57A);
     IWETH public constant WETH =
@@ -62,6 +60,7 @@ contract MinerETHv2Test is Test {
 
         deal(address(this), 1_000 ether);
 
+        // During deployment, Brrito deposits each vault with 0.01 ETH and burns the tokens.
         miner.deposit{value: 0.01 ether}("");
     }
 
@@ -90,7 +89,6 @@ contract MinerETHv2Test is Test {
         private
         view
         returns (
-            uint256 estimatedRedepositShares,
             uint256 estimatedInterest,
             uint256 estimatedRewards,
             uint256 estimatedStrategyIndex,
@@ -103,12 +101,6 @@ contract MinerETHv2Test is Test {
             SolmateERC20(address(miner))
         );
         uint256 redeemedAssets = _calculateAssetsFromRedeem(minerSharesBalance);
-        estimatedRedepositShares = _calculateSharesFromDeposit(
-            // Deposit available balance if less than total supply and vice versa.
-            redeemedAssets < minerTotalSupply
-                ? redeemedAssets
-                : minerTotalSupply
-        );
         estimatedInterest = redeemedAssets > minerTotalSupply
             ? redeemedAssets - minerTotalSupply
             : 0;
@@ -240,7 +232,6 @@ contract MinerETHv2Test is Test {
         uint256 minerTotalSupply = miner.totalSupply();
         uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
         (
-            ,
             uint256 estimatedInterest,
             uint256 estimatedRewards,
             uint256 estimatedStrategyIndex,
@@ -304,7 +295,6 @@ contract MinerETHv2Test is Test {
         uint256 minerTotalSupply = miner.totalSupply();
         uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
         (
-            ,
             uint256 estimatedInterest,
             uint256 estimatedRewards,
             uint256 estimatedStrategyIndex,
@@ -390,7 +380,6 @@ contract MinerETHv2Test is Test {
         uint256 minerTotalSupplyBefore = miner.totalSupply();
         (
             ,
-            ,
             uint256 estimatedRewards,
             uint256 estimatedStrategyIndex,
             uint256 estimatedRewardsAccrued
@@ -452,7 +441,7 @@ contract MinerETHv2Test is Test {
 
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupplyBefore = miner.totalSupply();
-        (, , uint256 estimatedRewards, , ) = _getEstimates();
+        (, uint256 estimatedRewards, , ) = _getEstimates();
         uint256 dynamicRewardsBalance = ELON.balanceOf(dynamicRewards);
 
         vm.expectEmit(true, true, true, true, address(miner));
@@ -523,7 +512,6 @@ contract MinerETHv2Test is Test {
         uint256 minerTotalSupply = miner.totalSupply();
         (
             ,
-            ,
             uint256 estimatedRewards,
             ,
             uint256 estimatedRewardsAccrued
@@ -586,7 +574,6 @@ contract MinerETHv2Test is Test {
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
         (
-            ,
             ,
             uint256 estimatedRewards,
             ,
@@ -659,7 +646,6 @@ contract MinerETHv2Test is Test {
         uint256 tokenBalanceBefore = miner.balanceOf(address(this));
         uint256 minerTotalSupply = miner.totalSupply();
         (
-            ,
             ,
             uint256 estimatedRewards,
             ,
