@@ -13,7 +13,7 @@ import {MinerETHv2} from "src/MinerETHv2.sol";
 contract MinerETHv2Factory {
     using LibClone for address;
 
-    address private immutable _implementation = address(new MinerETHv2());
+    address public immutable implementation = address(new MinerETHv2());
 
     /// @notice Deployed minimal proxies for each reward token.
     mapping(address rewardToken => address clone) public deployments;
@@ -35,7 +35,7 @@ contract MinerETHv2Factory {
         if (deployments[rewardToken] != address(0))
             return deployments[rewardToken];
 
-        MinerETHv2 miner = MinerETHv2(payable(clone = _implementation.clone()));
+        MinerETHv2 miner = MinerETHv2(payable(clone = implementation.clone()));
         FlywheelCore flywheel = new FlywheelCore(
             ERC20(rewardToken),
             IFlywheelRewards(address(0)),
